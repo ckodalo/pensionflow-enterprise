@@ -5,9 +5,9 @@
 .netpackages/
 .snapshots/
 .alcache/
-.vscode/rad.json
-.vscode/snapshots/
-.vscode/*.local.json
+**/.vscode/rad.json
+**/.vscode/snapshots/
+**/.vscode/*.local.json
 
 # Generated outputs and local build/test results
 outputs/
