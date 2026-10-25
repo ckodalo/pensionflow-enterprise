@@ -1,0 +1,7 @@
+# Local build packages and downloaded symbols
+*.app
+.alpackages/
+
+# Generated workbook previews and authoring dependencies
+outputs/
+node_modules/

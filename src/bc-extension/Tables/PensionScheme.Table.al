@@ -56,4 +56,22 @@ table 50100 "PFE Pension Scheme"
             Clustered = true;
         }
     }
+    trigger OnDelete()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Enrollment.SetRange("Scheme Code", "Scheme Code");
+        if not Enrollment.IsEmpty() then
+            Error('A scheme with enrollments cannot be deleted.');
+    end;
+
+    trigger OnRename()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Enrollment.SetRange("Scheme Code", xRec."Scheme Code");
+        if not Enrollment.IsEmpty() then
+            Error('A scheme with enrollments cannot be renamed.');
+    end;
+
 }

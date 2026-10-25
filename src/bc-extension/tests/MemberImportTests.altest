@@ -1,0 +1,190 @@
+codeunit 50201 "PFE Member Import Tests"
+{
+    Subtype = Test;
+    TestPermissions = Disabled;
+
+    [Test]
+    procedure ImportsValidRowsWithAutomaticNumbers()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Member: Record "PFE Pension Member";
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'IMPORT-A', '', 'First Import Member', '1990-01-15', '');
+        AddRow(Excel, 'IMPORT-B', '', 'Second Import Member', '', 'Inactive');
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 2, 'Expected two imported members.');
+        AssertTrue(Errors.IsEmpty(), 'Valid rows should not generate errors.');
+        Member.SetRange("Import Reference", 'IMPORT-A');
+        Member.FindFirst();
+        AssertTrue(Member."Member No." <> '', 'Expected an automatic member number.');
+        AssertTrue(Member."Date of Birth" = 19900115D, 'Expected parsed ISO birth date.');
+        AssertTrue(Member."Date Registered" = WorkDate(), 'Registration should default to WorkDate.');
+        Member.SetRange("Import Reference", 'IMPORT-B');
+        Member.FindFirst();
+        AssertTrue(Member.Status = Member.Status::Inactive, 'Expected inactive member.');
+    end;
+
+    [Test]
+    procedure InvalidRowPreventsAllInserts()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Member: Record "PFE Pension Member";
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'IMPORT-A', '', 'Valid Member', '', '');
+        AddRow(Excel, 'IMPORT-B', '', 'Invalid Member', '1990-02-30', '');
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 0, 'Expected atomic rejection.');
+        AssertTrue(Errors.Get(2, 11), 'Expected original row number in report.');
+        AssertTrue(Errors."Cell Value as Text" = '3', 'Expected source Excel row 3.');
+        Member.SetRange("Import Reference", 'IMPORT-A');
+        AssertTrue(Member.IsEmpty(), 'Valid row must not be partially imported.');
+    end;
+
+    [Test]
+    procedure RejectsDuplicateReferencesWithinWorkbook()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'import-a', '', 'First Member', '', '');
+        AddRow(Excel, 'IMPORT-A', '', 'Second Member', '', '');
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 0, 'Duplicate normalized references must fail.');
+        AssertTrue(Errors.Get(2, 12), 'Expected an error row.');
+        AssertTrue(StrPos(Errors."Cell Value as Text", 'repeated') > 0, 'Expected duplicate error.');
+    end;
+
+    [Test]
+    procedure ReuploadDoesNotCreateDuplicates()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Member: Record "PFE Pension Member";
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'IMPORT-A', '', 'Original Member', '', '');
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 1, 'First import should succeed.');
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 0, 'Reupload should be rejected.');
+        Member.SetRange("Import Reference", 'IMPORT-A');
+        AssertTrue(Member.Count() = 1, 'Reupload must not duplicate members.');
+    end;
+
+    [Test]
+    procedure RejectsManualNumbersWhenDisabled()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'IMPORT-A', 'MANUAL-NO', 'Manual Member', '', '');
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 0, 'Manual number should be rejected.');
+        AssertTrue(not Errors.IsEmpty(), 'Expected a manual-number error report.');
+    end;
+
+    [Test]
+    procedure RejectsInvalidStatusAndExcessiveNameLength()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'IMPORT-A', '', 'Invalid Status', '', 'Unknown');
+        AddRow(Excel, 'IMPORT-B', '', PadStr('', 101, 'X'), '', '');
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 0, 'Invalid rows must be rejected.');
+        AssertTrue(Errors.Get(2, 12), 'Expected invalid status error.');
+        AssertTrue(Errors.Get(3, 12), 'Expected long-name error.');
+    end;
+
+    [Test]
+    procedure RejectsFormulasAndIncorrectHeaders()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'IMPORT-A', '', 'Formula Member', '', '');
+        Excel.Get(2, 3);
+        Excel.Formula := '"Formula Member"';
+        Excel.Modify();
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 0, 'Formulas must be rejected.');
+        Excel.Get(1, 1);
+        Excel."Cell Value as Text" := 'Wrong Header';
+        Excel.Modify();
+        asserterror Importer.ProcessWorksheet(Excel, Errors);
+        AssertTrue(StrPos(GetLastErrorText(), 'header') > 0, 'Expected header error.');
+    end;
+
+    local procedure Initialize()
+    var
+        Setup: Record "PFE Setup";
+        Series: Record "No. Series";
+        Line: Record "No. Series Line";
+        SeriesCode: Code[20];
+    begin
+        if not Setup.Get() then begin
+            Setup.Init();
+            Setup.Insert(true);
+        end;
+        SeriesCode := CopyStr(DelChr(Format(CreateGuid()), '=', '{}-'), 1, 20);
+        Series.Init();
+        Series.Code := SeriesCode;
+        Series."Default Nos." := true;
+        Series.Insert(true);
+        Line.Init();
+        Line."Series Code" := SeriesCode;
+        Line."Line No." := 10000;
+        Line.Validate("Starting No.", 'IMP000001');
+        Line.Validate("Ending No.", 'IMP999999');
+        Line.Validate("Increment-by No.", 1);
+        Line.Insert(true);
+        Setup."Member Nos." := SeriesCode;
+        Setup.Modify(true);
+    end;
+
+    local procedure AddHeaders(var Excel: Record "Excel Buffer" temporary)
+    var
+        Importer: Codeunit "PFE Member Import";
+        ColumnNo: Integer;
+    begin
+        Excel.NewRow();
+        for ColumnNo := 1 to 10 do
+            Excel.AddColumn(Importer.GetHeader(ColumnNo), false, '', false, false, false, '@', Excel."Cell Type"::Text);
+    end;
+
+    local procedure AddRow(var Excel: Record "Excel Buffer" temporary; Reference: Text; MemberNo: Text; MemberName: Text; BirthDate: Text; StatusText: Text)
+    begin
+        Excel.NewRow();
+        Excel.AddColumn(Reference, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(MemberNo, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(MemberName, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(BirthDate, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn('', false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn('', false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn('', false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn('', false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn('', false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(StatusText, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+    end;
+
+    local procedure AssertTrue(Condition: Boolean; FailureMessage: Text)
+    begin
+        if not Condition then
+            Error(FailureMessage);
+    end;
+}

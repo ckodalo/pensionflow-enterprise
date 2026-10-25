@@ -5,6 +5,7 @@ page 50104 "PFE Employer Card"
     SourceTable = "PFE Employer";
     Caption = 'Pension Employer';
     ApplicationArea = All;
+    DelayedInsert = true;
 
     layout
     {
@@ -80,4 +81,20 @@ page 50104 "PFE Employer Card"
             }
         }
     }
+    actions
+    {
+        area(Navigation)
+        {
+            action(Enrollments)
+            {
+                ApplicationArea = All;
+                Caption = 'Enrollments';
+                Image = List;
+                RunObject = page "PFE Enrollment List";
+                RunPageLink = "Employer Code" = field("Employer Code");
+                ToolTip = 'View scheme enrollments for this record.';
+            }
+        }
+    }
+
 }

@@ -36,4 +36,20 @@ page 50100 "PFE Pension Scheme List"
             }
         }
     }
+    actions
+    {
+        area(Navigation)
+        {
+            action(Enrollments)
+            {
+                ApplicationArea = All;
+                Caption = 'Enrollments';
+                Image = List;
+                RunObject = page "PFE Enrollment List";
+                RunPageLink = "Scheme Code" = field("Scheme Code");
+                ToolTip = 'View scheme enrollments for this record.';
+            }
+        }
+    }
+
 }

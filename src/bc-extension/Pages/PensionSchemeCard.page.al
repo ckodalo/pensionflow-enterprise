@@ -52,4 +52,20 @@ page 50101 "PFE Pension Scheme Card"
             }
         }
     }
+    actions
+    {
+        area(Navigation)
+        {
+            action(Enrollments)
+            {
+                ApplicationArea = All;
+                Caption = 'Enrollments';
+                Image = List;
+                RunObject = page "PFE Enrollment List";
+                RunPageLink = "Scheme Code" = field("Scheme Code");
+                ToolTip = 'View scheme enrollments for this record.';
+            }
+        }
+    }
+
 }

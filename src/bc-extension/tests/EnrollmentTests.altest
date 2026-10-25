@@ -1,0 +1,240 @@
+codeunit 50200 "PFE Enrollment Tests"
+{
+    Subtype = Test;
+    TestPermissions = Disabled;
+
+    [Test]
+    procedure SupportsManyToManyRelationships()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260101D, 0D);
+        AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S2', 20260101D, 0D);
+        AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E2', 'TEST-S1', 20260101D, 0D);
+        AddEnrollment(Enrollment, 'TEST-M2', 'TEST-E1', 'TEST-S1', 20260101D, 0D);
+        Enrollment.Reset();
+        Enrollment.SetRange("Member No.", 'TEST-M1');
+        AssertTrue(Enrollment.Count() = 3, 'Member should have three enrollments.');
+        Enrollment.Reset();
+        Enrollment.SetRange("Scheme Code", 'TEST-S1');
+        AssertTrue(Enrollment.Count() = 3, 'Scheme should link multiple members and employers.');
+    end;
+
+    [Test]
+    procedure DefaultsRatesButAllowsOverrides()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260101D, 0D);
+        AssertTrue((Enrollment."Employee Rate" = 5) and (Enrollment."Employer Rate" = 10), 'Scheme rates should default.');
+        Enrollment.Validate("Employee Rate", 7.5);
+        Enrollment.Validate("Employer Rate", 15);
+        Enrollment.Modify(true);
+        Enrollment.Get(Enrollment."Enrollment No.");
+        AssertTrue((Enrollment."Employee Rate" = 7.5) and (Enrollment."Employer Rate" = 15), 'Enrollment overrides should persist.');
+    end;
+
+    [Test]
+    procedure RejectsOverlapsAndAllowsNextDay()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260101D, 20260630D);
+        asserterror AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260630D, 20261231D);
+        AssertErrorContains('overlapping enrollment');
+        AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260701D, 0D);
+    end;
+
+    [Test]
+    procedure RejectsInvalidDatesAndRatesOnInsert()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        asserterror AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260630D, 20260101D);
+        AssertErrorContains('Effective To');
+        PrepareEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260101D, 0D);
+        Enrollment."Employee Rate" := 101;
+        asserterror Enrollment.Insert(true);
+        AssertErrorContains('between 0 and 100');
+    end;
+
+    [Test]
+    procedure RequiresExistingRelationships()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        PrepareEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260101D, 0D);
+        Enrollment."Member No." := 'MISSING-MEMBER';
+        asserterror Enrollment.Insert(true);
+        AssertErrorContains('does not exist');
+    end;
+
+    [Test]
+    procedure RequiresActiveParentsForActivation()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+        Employer: Record "PFE Employer";
+    begin
+        Initialize();
+        AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260101D, 0D);
+        Employer.Get('TEST-E1');
+        Employer.Validate(Status, Employer.Status::Suspended);
+        Employer.Modify(true);
+        Enrollment.Validate(Status, Enrollment.Status::Active);
+        asserterror Enrollment.Modify(true);
+        AssertErrorContains('Status');
+    end;
+
+    [Test]
+    procedure ProtectsReferencedRecords()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+        Member: Record "PFE Pension Member";
+        Employer: Record "PFE Employer";
+        Scheme: Record "PFE Pension Scheme";
+    begin
+        Initialize();
+        AddEnrollment(Enrollment, 'TEST-M1', 'TEST-E1', 'TEST-S1', 20260101D, 0D);
+        Member.Get('TEST-M1');
+        asserterror Member.Delete(true);
+        AssertErrorContains('cannot be deleted');
+        Employer.Get('TEST-E1');
+        asserterror Employer.Delete(true);
+        AssertErrorContains('cannot be deleted');
+        Scheme.Get('TEST-S1');
+        asserterror Scheme.Delete(true);
+        AssertErrorContains('cannot be deleted');
+    end;
+
+    [Test]
+    procedure GeneratesMemberAndEnrollmentNumbers()
+    var
+        Setup: Record "PFE Setup";
+        Series: Record "No. Series";
+        Member: Record "PFE Pension Member";
+        Enrollment: Record "PFE Scheme Enrollment";
+        FirstNo: Code[20];
+    begin
+        Initialize();
+        Setup.Get();
+        Series.Get(Setup."Member Nos.");
+        Series.Validate("Manual Nos.", false);
+        Series.Modify(true);
+        Member.Init();
+        Member."Member Name" := 'Automatic Test Member';
+        Member.Insert(true);
+        AssertTrue(Member."Member No." <> '', 'Member number should be generated.');
+        AddEnrollment(Enrollment, Member."Member No.", 'TEST-E1', 'TEST-S1', 20260101D, 0D);
+        FirstNo := Enrollment."Enrollment No.";
+        AddEnrollment(Enrollment, Member."Member No.", 'TEST-E1', 'TEST-S2', 20260101D, 0D);
+        AssertTrue((FirstNo <> '') and (FirstNo <> Enrollment."Enrollment No."), 'Enrollment numbers should be unique.');
+        Member.Init();
+        Member."Member No." := 'MANUAL';
+        Member."Member Name" := 'Manual Test Member';
+        asserterror Member.Insert(true);
+        AssertErrorContains('manual');
+    end;
+
+    local procedure Initialize()
+    var
+        Setup: Record "PFE Setup";
+        Series: Record "No. Series";
+        SeriesLine: Record "No. Series Line";
+        SeriesCode: Code[20];
+    begin
+        if not Setup.Get() then begin
+            Setup.Init();
+            Setup.Insert(true);
+        end;
+        SeriesCode := CopyStr(DelChr(Format(CreateGuid()), '=', '{}-'), 1, 20);
+        Series.Init();
+        Series.Code := SeriesCode;
+        Series."Default Nos." := true;
+        Series."Manual Nos." := true;
+        Series.Insert(true);
+        SeriesLine.Init();
+        SeriesLine."Series Code" := SeriesCode;
+        SeriesLine."Line No." := 10000;
+        SeriesLine.Validate("Starting No.", 'T000001');
+        SeriesLine.Validate("Ending No.", 'T999999');
+        SeriesLine.Validate("Increment-by No.", 1);
+        SeriesLine.Insert(true);
+        Setup."Member Nos." := SeriesCode;
+        Setup."Employer Nos." := SeriesCode;
+        Setup."Enrollment Nos." := SeriesCode;
+        Setup.Modify(true);
+        CreateMember('TEST-M1');
+        CreateMember('TEST-M2');
+        CreateEmployer('TEST-E1');
+        CreateEmployer('TEST-E2');
+        CreateScheme('TEST-S1');
+        CreateScheme('TEST-S2');
+    end;
+
+    local procedure CreateMember(MemberNo: Code[20])
+    var
+        Member: Record "PFE Pension Member";
+    begin
+        Member.Init();
+        Member."Member No." := MemberNo;
+        Member."Member Name" := 'Fictional Test Member';
+        Member.Insert(true);
+    end;
+
+    local procedure CreateEmployer(EmployerCode: Code[20])
+    var
+        Employer: Record "PFE Employer";
+    begin
+        Employer.Init();
+        Employer."Employer Code" := EmployerCode;
+        Employer."Employer Name" := 'Fictional Test Employer';
+        Employer.Status := Employer.Status::Active;
+        Employer.Insert(true);
+    end;
+
+    local procedure CreateScheme(SchemeCode: Code[20])
+    var
+        Scheme: Record "PFE Pension Scheme";
+    begin
+        Scheme.Init();
+        Scheme."Scheme Code" := SchemeCode;
+        Scheme."Scheme Name" := 'Fictional Test Scheme';
+        Scheme."Employee Rate" := 5;
+        Scheme."Employer Rate" := 10;
+        Scheme.Status := Scheme.Status::Active;
+        Scheme.Insert(true);
+    end;
+
+    local procedure PrepareEnrollment(var Enrollment: Record "PFE Scheme Enrollment"; MemberNo: Code[20]; EmployerCode: Code[20]; SchemeCode: Code[20]; FromDate: Date; ToDate: Date)
+    begin
+        Clear(Enrollment);
+        Enrollment.Init();
+        Enrollment.Validate("Member No.", MemberNo);
+        Enrollment.Validate("Employer Code", EmployerCode);
+        Enrollment.Validate("Scheme Code", SchemeCode);
+        Enrollment."Effective From" := FromDate;
+        Enrollment."Effective To" := ToDate;
+    end;
+
+    local procedure AddEnrollment(var Enrollment: Record "PFE Scheme Enrollment"; MemberNo: Code[20]; EmployerCode: Code[20]; SchemeCode: Code[20]; FromDate: Date; ToDate: Date)
+    begin
+        PrepareEnrollment(Enrollment, MemberNo, EmployerCode, SchemeCode, FromDate, ToDate);
+        Enrollment.Insert(true);
+    end;
+
+    local procedure AssertTrue(Condition: Boolean; FailureMessage: Text)
+    begin
+        if not Condition then
+            Error(FailureMessage);
+    end;
+
+    local procedure AssertErrorContains(ExpectedText: Text)
+    begin
+        AssertTrue(StrPos(LowerCase(GetLastErrorText()), LowerCase(ExpectedText)) > 0, 'Unexpected error: ' + GetLastErrorText());
+    end;
+}
