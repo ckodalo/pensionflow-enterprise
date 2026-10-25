@@ -18,6 +18,14 @@ page 50102 "PFE Pension Role Center"
                     RunObject = page "PFE Pension Scheme List";
                     ToolTip = 'View and manage pension schemes.';
                 }
+
+                action(Employers)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Employers';
+                    RunObject = page "PFE Employer List";
+                    ToolTip = 'View and manage pension employers.';
+                }
             }
         }
 
@@ -29,6 +37,14 @@ page 50102 "PFE Pension Role Center"
                 Caption = 'Pension Schemes';
                 RunObject = page "PFE Pension Scheme List";
                 ToolTip = 'View and manage pension schemes.';
+            }
+
+            action(EmployerList)
+            {
+                ApplicationArea = All;
+                Caption = 'Employers';
+                RunObject = page "PFE Employer List";
+                ToolTip = 'View and manage pension employers.';
             }
         }
     }
