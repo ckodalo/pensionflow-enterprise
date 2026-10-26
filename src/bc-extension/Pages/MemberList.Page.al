@@ -51,6 +51,43 @@ page 50106 "PFE Member List"
     {
         area(Processing)
         {
+            action(RegisterMember)
+            {
+                ApplicationArea = All;
+                Caption = 'Register Member';
+                Image = NewCustomer;
+                RunObject = page "PFE Member Card";
+                RunPageMode = Create;
+                ToolTip = 'Register a member independently. Select a scheme and any employer later through enrollment.';
+            }
+            action(ImportEmployerMembers)
+            {
+                ApplicationArea = All;
+                Caption = 'Import Employer Members';
+                Image = ImportExcel;
+                ToolTip = 'Select an employer, participating scheme, and dates, then import or reuse members and create enrollments.';
+                trigger OnAction()
+                var
+                    Importer: Codeunit "PFE Member Import";
+                begin
+                    Importer.UploadEnrolledMembers("PFE Member Import Mode"::Employer);
+                    CurrPage.Update(false);
+                end;
+            }
+            action(ImportIndividualMembers)
+            {
+                ApplicationArea = All;
+                Caption = 'Import Individual Members';
+                Image = ImportExcel;
+                ToolTip = 'Import or reuse members and enroll them in an Individual scheme without an employer.';
+                trigger OnAction()
+                var
+                    Importer: Codeunit "PFE Member Import";
+                begin
+                    Importer.UploadEnrolledMembers("PFE Member Import Mode"::Individual);
+                    CurrPage.Update(false);
+                end;
+            }
             action(DownloadImportTemplate)
             {
                 ApplicationArea = All;
@@ -67,7 +104,7 @@ page 50106 "PFE Member List"
             action(ImportMembers)
             {
                 ApplicationArea = All;
-                Caption = 'Import Members';
+                Caption = 'Import Members Only';
                 Image = ImportExcel;
                 ToolTip = 'Upload completed member rows. All rows must pass validation before any members are created. Invalid rows are returned in an Excel error report.';
                 trigger OnAction()

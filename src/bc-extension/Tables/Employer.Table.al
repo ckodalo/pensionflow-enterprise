@@ -11,7 +11,7 @@ table 50101 "PFE Employer"
         field(1; "Employer Code"; Code[20])
         {
             Caption = 'Employer Code';
-            NotBlank = true;
+            // Allow a blank key on new pages; OnInsert assigns the next number.
 
             trigger OnValidate()
             var
@@ -123,19 +123,27 @@ table 50101 "PFE Employer"
     trigger OnDelete()
     var
         Enrollment: Record "PFE Scheme Enrollment";
+        Participation: Record "PFE Scheme Employer";
     begin
         Enrollment.SetRange("Employer Code", "Employer Code");
         if not Enrollment.IsEmpty() then
             Error('An employer with enrollments cannot be deleted.');
+        Participation.SetRange("Employer Code", "Employer Code");
+        if not Participation.IsEmpty() then
+            Error('An employer participating in schemes cannot be deleted.');
     end;
 
     trigger OnRename()
     var
         Enrollment: Record "PFE Scheme Enrollment";
+        Participation: Record "PFE Scheme Employer";
     begin
         Enrollment.SetRange("Employer Code", xRec."Employer Code");
         if not Enrollment.IsEmpty() then
             Error('An employer with enrollments cannot be renamed.');
+        Participation.SetRange("Employer Code", xRec."Employer Code");
+        if not Participation.IsEmpty() then
+            Error('An employer participating in schemes cannot be renamed.');
     end;
 
 }

@@ -20,7 +20,7 @@ page 50107 "PFE Member Card"
                 field("Import Reference"; Rec."Import Reference")
                 {
                     ApplicationArea = All;
-                    ToolTip = 'Specifies the original import reference, used to prevent duplicate uploads.';
+                    ToolTip = 'Specifies an optional stable external identity. Once saved, it cannot be changed. Imports use it to recognize the same member.';
                 }
                 field("Member Name"; Rec."Member Name")
                 {

@@ -1,0 +1,280 @@
+codeunit 50202 "PFE Registration Tests"
+{
+    Subtype = Test;
+    TestPermissions = Disabled;
+
+    [Test]
+    procedure IndividualEnrollmentHasNoEmployer()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        PrepareEnrollment(Enrollment, 'INDIVIDUAL', '');
+        Enrollment.Insert(true);
+        Enrollment.TestField("Employer Code", '');
+        Enrollment.TestField("Employer Rate", 0);
+        Enrollment.TestField("Employee Rate", 5);
+    end;
+
+    [Test]
+    procedure EmployerIsRequiredAndMustParticipate()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        PrepareEnrollment(Enrollment, 'OCCUPATIONAL', '');
+        asserterror Enrollment.Insert(true);
+        AssertLastError('employer is required');
+        PrepareEnrollment(Enrollment, 'OCCUPATIONAL', 'EMP-2');
+        asserterror Enrollment.Insert(true);
+        AssertLastError('does not exist');
+    end;
+
+    [Test]
+    procedure IndividualRejectsEmployerAndEmployerRate()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        PrepareEnrollment(Enrollment, 'INDIVIDUAL', 'EMP-1');
+        asserterror Enrollment.Insert(true);
+        AssertLastError('must not have an employer');
+        PrepareEnrollment(Enrollment, 'INDIVIDUAL', '');
+        Enrollment."Employer Rate" := 1;
+        asserterror Enrollment.Insert(true);
+        AssertLastError('Employer Contribution Rate');
+    end;
+
+    [Test]
+    procedure ParticipationDatesAndActiveFlagAreEnforced()
+    var
+        Participation: Record "PFE Scheme Employer";
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        Participation.Get('OCCUPATIONAL', 'EMP-1');
+        Participation."Effective From" := 20260201D;
+        Participation."Effective To" := 20261231D;
+        Participation.Modify(true);
+        PrepareEnrollment(Enrollment, 'OCCUPATIONAL', 'EMP-1');
+        asserterror Enrollment.Insert(true);
+        AssertLastError('before employer participation');
+        Enrollment."Effective From" := 20260201D;
+        asserterror Enrollment.Insert(true);
+        AssertLastError('within the employer participation');
+        Enrollment."Effective To" := 20261231D;
+        Participation.Active := false;
+        Participation.Modify(true);
+        asserterror Enrollment.Insert(true);
+        AssertLastError('Active');
+    end;
+
+    [Test]
+    procedure EmployerImportReusesIdentityAcrossEmployers()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Participation: Record "PFE Scheme Employer";
+        Member: Record "PFE Pension Member";
+        Enrollment: Record "PFE Scheme Enrollment";
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'REF-EXISTING', 'MEM-1', 'Existing Test Member');
+        AssertTrue(Importer.ProcessEnrollmentWorksheet(Excel, Errors, "PFE Member Import Mode"::Employer, 'OCCUPATIONAL', 'EMP-1', 20260101D, 0D) = 1, 'Expected first employer enrollment.');
+        Participation.Init();
+        Participation."Scheme Code" := 'OCCUPATIONAL';
+        Participation."Employer Code" := 'EMP-2';
+        Participation.Active := true;
+        Participation.Insert(true);
+        AssertTrue(Importer.ProcessEnrollmentWorksheet(Excel, Errors, "PFE Member Import Mode"::Employer, 'OCCUPATIONAL', 'EMP-2', 20260101D, 0D) = 1, 'Expected second employer enrollment.');
+        Member.SetRange("Import Reference", 'REF-EXISTING');
+        AssertTrue(Member.Count() = 1, 'Member identity must be preserved.');
+        Enrollment.SetRange("Member No.", 'MEM-1');
+        AssertTrue(Enrollment.Count() = 2, 'Expected two employer relationships.');
+    end;
+
+    [Test]
+    procedure IndividualImportCreatesAndReusesEnrollment()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Member: Record "PFE Pension Member";
+        Enrollment: Record "PFE Scheme Enrollment";
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'REF-NEW', '', 'New Individual Member');
+        AssertTrue(Importer.ProcessEnrollmentWorksheet(Excel, Errors, "PFE Member Import Mode"::Individual, 'INDIVIDUAL', '', 20260101D, 0D) = 1, 'Expected individual import.');
+        AssertTrue(Importer.ProcessEnrollmentWorksheet(Excel, Errors, "PFE Member Import Mode"::Individual, 'INDIVIDUAL', '', 20260101D, 0D) = 1, 'Expected idempotent reupload.');
+        Member.SetRange("Import Reference", 'REF-NEW');
+        Member.FindFirst();
+        Enrollment.SetRange("Member No.", Member."Member No.");
+        AssertTrue(Enrollment.Count() = 1, 'Reupload must retain the existing enrollment.');
+        Enrollment.FindFirst();
+        Enrollment.TestField("Employer Code", '');
+        Enrollment.TestField("Employer Rate", 0);
+    end;
+
+    [Test]
+    procedure IdentityMismatchRejectsEntireImport()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Member: Record "PFE Pension Member";
+        Importer: Codeunit "PFE Member Import";
+    begin
+        Initialize();
+        AddHeaders(Excel);
+        AddRow(Excel, 'REF-NEW', '', 'Valid New Member');
+        AddRow(Excel, 'REF-EXISTING', 'MEM-1', 'Different Person');
+        AssertTrue(Importer.ProcessEnrollmentWorksheet(Excel, Errors, "PFE Member Import Mode"::Individual, 'INDIVIDUAL', '', 20260101D, 0D) = 0, 'Expected identity rejection.');
+        AssertTrue(not Errors.IsEmpty(), 'Expected an error report.');
+        Member.SetRange("Import Reference", 'REF-NEW');
+        AssertTrue(Member.IsEmpty(), 'No partial member insertion is allowed.');
+    end;
+
+    [Test]
+    procedure UnclassifiedSchemeCannotAcceptEnrollment()
+    var
+        Scheme: Record "PFE Pension Scheme";
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        Scheme.Get('OCCUPATIONAL');
+        // Simulate the additive schema upgrade of an existing scheme.
+        Scheme.Category := Scheme.Category::Unspecified;
+        Scheme.Modify(false);
+        PrepareEnrollment(Enrollment, 'OCCUPATIONAL', 'EMP-1');
+        asserterror Enrollment.Insert(true);
+        AssertLastError('Scheme Category');
+    end;
+
+    [Test]
+    procedure CsvParserPreservesQuotedCommasAndQuotes()
+    var
+        Excel: Record "Excel Buffer" temporary;
+        Errors: Record "Excel Buffer" temporary;
+        Member: Record "PFE Pension Member";
+        Blob: Codeunit "Temp Blob";
+        Importer: Codeunit "PFE Member Import";
+        Output: OutStream;
+        Input: InStream;
+    begin
+        Initialize();
+        Blob.CreateOutStream(Output, TextEncoding::UTF8);
+        Output.WriteText('Import Reference,Member No.,Member Name,Date of Birth,Email Address,Phone No.,Address,City,Date Registered,Status');
+        Output.WriteText();
+        Output.WriteText('CSV-1,,"Test ""Quoted"", Member",,,,,,,Active');
+        Output.WriteText();
+        Blob.CreateInStream(Input, TextEncoding::UTF8);
+        Importer.ReadMemberFile(Input, 'members.csv', Excel);
+        AssertTrue(Importer.ProcessWorksheet(Excel, Errors) = 1, 'Expected quoted CSV import.');
+        Member.SetRange("Import Reference", 'CSV-1');
+        Member.FindFirst();
+        Member.TestField("Member Name", 'Test "Quoted", Member');
+    end;
+
+    local procedure Initialize()
+    var
+        Setup: Record "PFE Setup";
+        Series: Record "No. Series";
+        Line: Record "No. Series Line";
+        Scheme: Record "PFE Pension Scheme";
+        Employer: Record "PFE Employer";
+        Member: Record "PFE Pension Member";
+        Participation: Record "PFE Scheme Employer";
+    begin
+        if not Setup.Get() then begin
+            Setup.Init();
+            Setup.Insert(true);
+        end;
+        Series.Code := CopyStr(DelChr(Format(CreateGuid()), '=', '{}-'), 1, 20);
+        Series."Default Nos." := true;
+        Series."Manual Nos." := true;
+        Series.Insert(true);
+        Line."Series Code" := Series.Code;
+        Line."Line No." := 10000;
+        Line.Validate("Starting No.", 'SC000001');
+        Line.Validate("Ending No.", 'SC999999');
+        Line.Validate("Increment-by No.", 1);
+        Line.Insert(true);
+        Setup."Employer Nos." := Series.Code;
+        Setup."Member Nos." := Series.Code;
+        Setup."Enrollment Nos." := Series.Code;
+        Setup.Modify(true);
+        Member."Member No." := 'MEM-1';
+        Member."Member Name" := 'Existing Test Member';
+        Member.Insert(true);
+        Employer."Employer Code" := 'EMP-1';
+        Employer.Status := Employer.Status::Active;
+        Employer.Insert(true);
+        Employer.Init();
+        Employer."Employer Code" := 'EMP-2';
+        Employer.Status := Employer.Status::Active;
+        Employer.Insert(true);
+        Scheme."Scheme Code" := 'OCCUPATIONAL';
+        Scheme.Category := Scheme.Category::Occupational;
+        Scheme.Status := Scheme.Status::Active;
+        Scheme."Employee Rate" := 5;
+        Scheme."Employer Rate" := 10;
+        Scheme.Insert(true);
+        Scheme.Init();
+        Scheme."Scheme Code" := 'INDIVIDUAL';
+        Scheme.Category := Scheme.Category::Individual;
+        Scheme.Status := Scheme.Status::Active;
+        Scheme."Employee Rate" := 5;
+        Scheme.Insert(true);
+        Participation."Scheme Code" := 'OCCUPATIONAL';
+        Participation."Employer Code" := 'EMP-1';
+        Participation.Active := true;
+        Participation.Insert(true);
+    end;
+
+    local procedure PrepareEnrollment(var Enrollment: Record "PFE Scheme Enrollment"; SchemeCode: Code[20]; EmployerCode: Code[20])
+    begin
+        Clear(Enrollment);
+        Enrollment.Init();
+        Enrollment.Validate("Member No.", 'MEM-1');
+        Enrollment.Validate("Scheme Code", SchemeCode);
+        Enrollment.Validate("Employer Code", EmployerCode);
+        Enrollment.Validate("Effective From", 20260101D);
+        Enrollment.Validate(Status, Enrollment.Status::Active);
+    end;
+
+    local procedure AddHeaders(var Excel: Record "Excel Buffer" temporary)
+    var
+        Importer: Codeunit "PFE Member Import";
+        ColumnNo: Integer;
+    begin
+        Excel.NewRow();
+        for ColumnNo := 1 to 10 do
+            Excel.AddColumn(Importer.GetHeader(ColumnNo), false, '', false, false, false, '@', Excel."Cell Type"::Text);
+    end;
+
+    local procedure AddRow(var Excel: Record "Excel Buffer" temporary; Reference: Text; MemberNo: Text; MemberName: Text)
+    var
+        ColumnNo: Integer;
+    begin
+        Excel.NewRow();
+        Excel.AddColumn(Reference, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(MemberNo, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(MemberName, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        for ColumnNo := 4 to 9 do
+            Excel.AddColumn('', false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn('Active', false, '', false, false, false, '@', Excel."Cell Type"::Text);
+    end;
+
+    local procedure AssertTrue(Condition: Boolean; FailureMessage: Text)
+    begin
+        if not Condition then
+            Error(FailureMessage);
+    end;
+
+    local procedure AssertLastError(Expected: Text)
+    begin
+        AssertTrue(StrPos(LowerCase(GetLastErrorText()), LowerCase(Expected)) > 0, GetLastErrorText());
+    end;
+}

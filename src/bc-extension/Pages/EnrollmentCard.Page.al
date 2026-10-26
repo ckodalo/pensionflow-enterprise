@@ -25,7 +25,7 @@ page 50109 "PFE Enrollment Card"
                 field("Employer Code"; Rec."Employer Code")
                 {
                     ApplicationArea = All;
-                    ToolTip = 'Specifies the employer participating in this enrollment.';
+                    ToolTip = 'Required for Occupational and Umbrella schemes; leave blank for Individual schemes.';
                 }
                 field("Scheme Code"; Rec."Scheme Code")
                 {
@@ -50,7 +50,7 @@ page 50109 "PFE Enrollment Card"
                 field("Employee Rate"; Rec."Employee Rate")
                 {
                     ApplicationArea = All;
-                    ToolTip = 'Specifies the employee contribution percentage for this enrollment.';
+                    ToolTip = 'Specifies the member contribution percentage, including voluntary individual contributions.';
                 }
                 field("Employer Rate"; Rec."Employer Rate")
                 {
@@ -76,6 +76,7 @@ page 50109 "PFE Enrollment Card"
             {
                 ApplicationArea = All;
                 Caption = 'Employer';
+                Enabled = Rec."Employer Code" <> '';
                 RunObject = page "PFE Employer Card";
                 RunPageLink = "Employer Code" = field("Employer Code");
                 ToolTip = 'Open the linked employer record.';

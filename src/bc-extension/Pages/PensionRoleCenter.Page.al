@@ -35,13 +35,20 @@ page 50102 "PFE Pension Role Center"
                     ApplicationArea = All;
                     Caption = 'Scheme Enrollments';
                     RunObject = page "PFE Enrollment List";
-                    ToolTip = 'Manage member enrollments in employer pension schemes.';
+                    ToolTip = 'Manage employer-sponsored and individual pension enrollments.';
                 }
 
             }
             group(SchemeManagement)
             {
                 Caption = 'Schemes and Employers';
+                action(SchemeEmployers)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Scheme Employers';
+                    RunObject = page "PFE Scheme Employers";
+                    ToolTip = 'Configure employer participation in Occupational and Umbrella schemes.';
+                }
 
                 action(PensionSchemes)
                 {
@@ -87,7 +94,7 @@ page 50102 "PFE Pension Role Center"
                 ApplicationArea = All;
                 Caption = 'Scheme Enrollments';
                 RunObject = page "PFE Enrollment List";
-                ToolTip = 'Manage member enrollments in employer pension schemes.';
+                ToolTip = 'Manage employer-sponsored and individual pension enrollments.';
             }
             action(PensionSchemeList)
             {
@@ -111,7 +118,7 @@ page 50102 "PFE Pension Role Center"
             action(NewMember)
             {
                 ApplicationArea = All;
-                Caption = 'New Member';
+                Caption = 'Register Member';
                 RunObject = page "PFE Member Card";
                 RunPageMode = Create;
                 Image = NewCustomer;
@@ -133,7 +140,7 @@ page 50102 "PFE Pension Role Center"
                 RunObject = page "PFE Enrollment Card";
                 RunPageMode = Create;
                 Image = NewDocument;
-                ToolTip = 'Enroll a member in an employer pension scheme.';
+                ToolTip = 'Enroll a member in an employer-sponsored or individual pension scheme.';
             }
         }
     }

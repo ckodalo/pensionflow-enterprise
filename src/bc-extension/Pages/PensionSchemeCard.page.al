@@ -26,6 +26,11 @@ page 50101 "PFE Pension Scheme Card"
                 {
                     ApplicationArea = All;
                 }
+                field(Category; Rec.Category)
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Specifies Occupational, Umbrella, or Individual participation rules, separately from benefit design.';
+                }
 
                 field(Status; Rec.Status)
                 {
@@ -56,6 +61,14 @@ page 50101 "PFE Pension Scheme Card"
     {
         area(Navigation)
         {
+            action(ParticipatingEmployers)
+            {
+                ApplicationArea = All;
+                Caption = 'Participating Employers';
+                RunObject = page "PFE Scheme Employers";
+                RunPageLink = "Scheme Code" = field("Scheme Code");
+                ToolTip = 'Manage employers eligible to enroll members in this scheme.';
+            }
             action(Enrollments)
             {
                 ApplicationArea = All;

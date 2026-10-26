@@ -19,7 +19,7 @@ table 50100 "PFE Pension Scheme"
 
         field(3; "Scheme Type"; Enum "PFE Scheme Type")
         {
-            Caption = 'Scheme Type';
+            Caption = 'Benefit Design';
         }
 
         field(4; "Employee Rate"; Decimal)
@@ -47,6 +47,10 @@ table 50100 "PFE Pension Scheme"
         {
             Caption = 'Status';
         }
+        field(8; Category; Enum "PFE Scheme Category")
+        {
+            Caption = 'Scheme Category';
+        }
     }
 
     keys
@@ -56,22 +60,63 @@ table 50100 "PFE Pension Scheme"
             Clustered = true;
         }
     }
+    trigger OnInsert()
+    begin
+        CheckCategory();
+    end;
+
+    trigger OnModify()
+    begin
+        CheckCategory();
+    end;
+
+    local procedure CheckCategory()
+    var
+        Enrollment: Record "PFE Scheme Enrollment";
+        Participation: Record "PFE Scheme Employer";
+    begin
+        if Category = Category::Individual then begin
+            TestField("Employer Rate", 0);
+            Participation.SetRange("Scheme Code", "Scheme Code");
+            if not Participation.IsEmpty() then
+                Error('A scheme with participating employers cannot become an Individual scheme.');
+        end;
+        Enrollment.SetRange("Scheme Code", "Scheme Code");
+        if Enrollment.FindSet() then
+            repeat
+                if Category = Category::Unspecified then
+                    Error('A scheme with enrollments must have a category.');
+                if (Category = Category::Individual) and (Enrollment."Employer Code" <> '') then
+                    Error('Existing employer enrollments are incompatible with an Individual scheme.');
+                if (Category <> Category::Individual) and (Enrollment."Employer Code" = '') then
+                    Error('Existing individual enrollments require an Individual scheme.');
+            until Enrollment.Next() = 0;
+    end;
+
     trigger OnDelete()
     var
         Enrollment: Record "PFE Scheme Enrollment";
+        Participation: Record "PFE Scheme Employer";
     begin
         Enrollment.SetRange("Scheme Code", "Scheme Code");
         if not Enrollment.IsEmpty() then
             Error('A scheme with enrollments cannot be deleted.');
+        Participation.SetRange("Scheme Code", "Scheme Code");
+        if not Participation.IsEmpty() then
+            Error('A scheme with participating employers cannot be deleted.');
     end;
 
     trigger OnRename()
     var
         Enrollment: Record "PFE Scheme Enrollment";
+        Participation: Record "PFE Scheme Employer";
     begin
         Enrollment.SetRange("Scheme Code", xRec."Scheme Code");
         if not Enrollment.IsEmpty() then
             Error('A scheme with enrollments cannot be renamed.');
+        Participation.SetRange("Scheme Code", xRec."Scheme Code");
+        if not Participation.IsEmpty() then
+            Error('A scheme with participating employers cannot be renamed.');
     end;
 
 }

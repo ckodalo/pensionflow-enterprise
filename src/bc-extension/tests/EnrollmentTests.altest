@@ -174,6 +174,10 @@ codeunit 50200 "PFE Enrollment Tests"
         CreateEmployer('TEST-E2');
         CreateScheme('TEST-S1');
         CreateScheme('TEST-S2');
+        CreateParticipation('TEST-S1', 'TEST-E1');
+        CreateParticipation('TEST-S1', 'TEST-E2');
+        CreateParticipation('TEST-S2', 'TEST-E1');
+        CreateParticipation('TEST-S2', 'TEST-E2');
     end;
 
     local procedure CreateMember(MemberNo: Code[20])
@@ -204,10 +208,22 @@ codeunit 50200 "PFE Enrollment Tests"
         Scheme.Init();
         Scheme."Scheme Code" := SchemeCode;
         Scheme."Scheme Name" := 'Fictional Test Scheme';
+        Scheme.Category := Scheme.Category::Umbrella;
         Scheme."Employee Rate" := 5;
         Scheme."Employer Rate" := 10;
         Scheme.Status := Scheme.Status::Active;
         Scheme.Insert(true);
+    end;
+
+    local procedure CreateParticipation(SchemeCode: Code[20]; EmployerCode: Code[20])
+    var
+        Participation: Record "PFE Scheme Employer";
+    begin
+        Participation.Init();
+        Participation."Scheme Code" := SchemeCode;
+        Participation."Employer Code" := EmployerCode;
+        Participation.Active := true;
+        Participation.Insert(true);
     end;
 
     local procedure PrepareEnrollment(var Enrollment: Record "PFE Scheme Enrollment"; MemberNo: Code[20]; EmployerCode: Code[20]; SchemeCode: Code[20]; FromDate: Date; ToDate: Date)

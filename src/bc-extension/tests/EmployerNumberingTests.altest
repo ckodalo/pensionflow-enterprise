@@ -1,0 +1,118 @@
+codeunit 50203 "PFE Employer Number Tests"
+{
+    Subtype = Test;
+    TestPermissions = Disabled;
+
+    [Test]
+    procedure CardSavesWithAutomaticEmployerNumber()
+    var
+        Employer: Record "PFE Employer";
+        Card: TestPage "PFE Employer Card";
+        SeriesCode: Code[20];
+    begin
+        SeriesCode := Initialize();
+        Card.OpenNew();
+        Card."Employer Name".SetValue('Automatic numbering test');
+        Card.Close();
+        Employer.Get('AUTO000001');
+        Employer.TestField("Employer Name", 'Automatic numbering test');
+        Employer.TestField("No. Series", SeriesCode);
+    end;
+
+    [Test]
+    procedure ManualEmployerNumberRemainsBlocked()
+    var
+        Employer: Record "PFE Employer";
+    begin
+        Initialize();
+        Employer.Init();
+        asserterror Employer.Validate("Employer Code", 'MANUAL-TEST');
+    end;
+
+    local procedure Initialize(): Code[20]
+    var
+        Setup: Record "PFE Setup";
+        Series: Record "No. Series";
+        Line: Record "No. Series Line";
+    begin
+        Series.Init();
+        Series.Code := CopyStr(DelChr(Format(CreateGuid()), '=', '{}-'), 1, 20);
+        Series."Default Nos." := true;
+        Series."Manual Nos." := false;
+        Series.Insert(true);
+        Line.Init();
+        Line."Series Code" := Series.Code;
+        Line."Line No." := 10000;
+        Line.Validate("Starting No.", 'AUTO000001');
+        Line.Validate("Ending No.", 'AUTO999999');
+        Line.Validate("Increment-by No.", 1);
+        Line.Insert(true);
+        if not Setup.Get() then begin
+            Setup.Init();
+            Setup.Insert(true);
+        end;
+        Setup."Employer Nos." := Series.Code;
+        Setup."Member Nos." := Series.Code;
+        Setup."Enrollment Nos." := Series.Code;
+        Setup.Modify(true);
+        exit(Series.Code);
+    end;
+
+    [Test]
+    procedure MemberCardSavesWithAutomaticNumber()
+    var
+        Member: Record "PFE Pension Member";
+        Card: TestPage "PFE Member Card";
+        SeriesCode: Code[20];
+    begin
+        SeriesCode := Initialize();
+        Card.OpenNew();
+        Card."Member Name".SetValue('Automatic member test');
+        Card.Close();
+        Member.Get('AUTO000001');
+        Member.TestField("Member Name", 'Automatic member test');
+        Member.TestField("No. Series", SeriesCode);
+    end;
+
+    [Test]
+    procedure EnrollmentCardSavesWithAutomaticNumber()
+    var
+        Member: Record "PFE Pension Member";
+        Scheme: Record "PFE Pension Scheme";
+        Enrollment: Record "PFE Scheme Enrollment";
+        Card: TestPage "PFE Enrollment Card";
+        SeriesCode: Code[20];
+    begin
+        SeriesCode := Initialize();
+        Member.Init();
+        Member."Member Name" := 'Enrollment numbering test';
+        Member.Insert(true);
+        Scheme.Init();
+        Scheme."Scheme Code" := CopyStr(DelChr(Format(CreateGuid()), '=', '{}-'), 1, 20);
+        Scheme.Category := Scheme.Category::Individual;
+        Scheme.Status := Scheme.Status::Active;
+        Scheme.Insert(true);
+        Card.OpenNew();
+        Card."Member No.".SetValue(Member."Member No.");
+        Card."Scheme Code".SetValue(Scheme."Scheme Code");
+        Card."Effective From".SetValue(WorkDate());
+        Card.Close();
+        Enrollment.SetRange("Member No.", Member."Member No.");
+        Enrollment.FindFirst();
+        Enrollment.TestField("Enrollment No.", 'AUTO000002');
+        Enrollment.TestField("No. Series", SeriesCode);
+    end;
+
+    [Test]
+    procedure ManualMemberAndEnrollmentNumbersRemainBlocked()
+    var
+        Member: Record "PFE Pension Member";
+        Enrollment: Record "PFE Scheme Enrollment";
+    begin
+        Initialize();
+        Member.Init();
+        asserterror Member.Validate("Member No.", 'MANUAL-MEMBER');
+        Enrollment.Init();
+        asserterror Enrollment.Validate("Enrollment No.", 'MANUAL-ENROLLMENT');
+    end;
+}

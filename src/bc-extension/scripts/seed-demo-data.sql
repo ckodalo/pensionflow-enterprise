@@ -7,8 +7,8 @@ SET XACT_ABORT ON;
 BEGIN TRANSACTION;
 
 INSERT INTO [dbo].[CRONUS International Ltd_$PFE Pension Scheme$41b2d20b-1f4f-404a-bec2-2064832d3c1c]
-    ([Scheme Code], [Scheme Name], [Scheme Type], [Employee Rate], [Employer Rate], [Effective Date], [Status], [$systemCreatedAt], [$systemModifiedAt])
-SELECT s.Code, s.Name, s.SchemeType, s.EmployeeRate, s.EmployerRate, CONVERT(datetime, '20260101', 112), s.Status, GETUTCDATE(), GETUTCDATE()
+    ([Scheme Code], [Scheme Name], [Scheme Type], [Employee Rate], [Employer Rate], [Effective Date], [Status], [Category], [$systemCreatedAt], [$systemModifiedAt])
+SELECT s.Code, s.Name, s.SchemeType, s.EmployeeRate, s.EmployerRate, CONVERT(datetime, '20260101', 112), s.Status, 2, GETUTCDATE(), GETUTCDATE()
 FROM (VALUES
     (N'DEMO-DC', N'Demo Growth Pension Scheme', 0, 5.0, 10.0, 1),
     (N'DEMO-DB', N'Demo Secure Pension Scheme', 1, 6.0, 12.0, 1),

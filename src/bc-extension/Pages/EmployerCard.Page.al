@@ -16,6 +16,7 @@ page 50104 "PFE Employer Card"
                 field("Employer Code"; Rec."Employer Code")
                 {
                     ApplicationArea = All;
+                    ToolTip = 'Leave blank to assign the next employer number when the record is saved. Enter a code only if the number series permits manual numbers.';
                 }
 
                 field("Employer Name"; Rec."Employer Name")
@@ -85,6 +86,14 @@ page 50104 "PFE Employer Card"
     {
         area(Navigation)
         {
+            action(ParticipatingSchemes)
+            {
+                ApplicationArea = All;
+                Caption = 'Participating Schemes';
+                RunObject = page "PFE Scheme Employers";
+                RunPageLink = "Employer Code" = field("Employer Code");
+                ToolTip = 'Manage the schemes this employer participates in.';
+            }
             action(Enrollments)
             {
                 ApplicationArea = All;

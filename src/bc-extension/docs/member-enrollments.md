@@ -1,9 +1,14 @@
 # Members and scheme enrollments
 
-Members are independent of employers. Each enrollment connects one member,
-one employer, and one pension scheme. Employer participation in schemes is
-represented by those enrollments; there is no separate participation agreement
-or restriction requiring a member to belong to just one employer.
+Members are independent of employers. Each enrollment connects one member and
+one pension scheme, with an employer required only for employer-sponsored
+schemes. A separate Scheme Employers list records participating employers.
+Members retain their identity across employers and voluntary memberships.
+
+Scheme Category (Occupational, Umbrella, Individual) controls participation.
+Benefit Design (Defined Contribution, Defined Benefit) remains independent.
+Occupational and Umbrella schemes require a participating employer. Individual
+schemes require a blank employer and zero employer contribution rate.
 
 Use **Members** and **Scheme Enrollments** in Tell Me or the PensionFlow Role
 Center. Member, employer, and scheme cards and lists include filtered
@@ -17,12 +22,17 @@ after registration date.
 
 ## Enrollment rules
 
-- Member, employer, scheme, and Effective From are required.
+- Member, scheme, and Effective From are required. Employer is required for
+  Occupational/Umbrella schemes and must be blank for Individual schemes.
+- Scheme Employers must contain the employer/scheme pair. Active enrollments
+  require active participation. Enrollment dates must fit inside its effective
+  period; blank participation dates are unrestricted.
 - Effective To is inclusive; blank means open-ended. It cannot precede Effective From.
-- Employee and employer rates each range from 0 to 100 percent. Selecting a
+- Member and employer rates each range from 0 to 100 percent. Selecting a
   different scheme copies its current rates, which can then be overridden.
-  Changing scheme defaults later does not rewrite enrollment rates.
-- Status starts as Draft. Active requires active member, employer, and scheme
+  Changing scheme defaults later does not rewrite enrollment rates. Individual
+  schemes and enrollments must have zero employer rate.
+- Status starts as Draft. Active requires active member, scheme, and any employer
   records and cannot start before the scheme effective date. Closed requires an
   end date. Cancelled records do not reserve an effective period.
 - Draft, Active, and Closed periods cannot overlap for the same member, employer,
@@ -31,7 +41,9 @@ after registration date.
 - Existing linked records are checked again on every insert/modify with triggers
   enabled. Changing a parent status does not automatically change its enrollments.
 - Members with enrollments cannot be deleted. Employers and schemes with
-  enrollments cannot be deleted or renamed. Member and enrollment numbers cannot
+  enrollments or participation records cannot be deleted or renamed. Participation
+  keys cannot be renamed, and participations with enrollments cannot be deleted.
+  Member and enrollment numbers cannot
   be renamed. These checks also include cancelled and closed enrollments.
 
 Application code must use Validate for scheme selection to copy rate defaults,
@@ -69,3 +81,20 @@ in two sessions: only one should succeed.
 
 Compilation does not execute these runtime tests. Publish with data-preserving
 schema synchronization; no demo records are added by this module.
+
+## Upgrade and new registration flows
+
+The new Category field defaults to Unspecified for existing schemes. Classify
+each scheme explicitly; category is never inferred from benefit design or
+existing employers. An unclassified scheme cannot receive new enrollments.
+Before using existing employer enrollments, create the corresponding Scheme
+Employer participation records with periods that cover their enrollment dates.
+Category changes cannot invalidate existing enrollment relationships.
+
+Under Members, use Register Member for independent registration, Import Employer
+Members to select a participating employer/scheme, or Import Individual Members
+to select an Individual scheme without an employer. See member-import.md.
+
+The contribution module remains future work. These rules establish eligibility
+and enrollment rates; they do not create payroll batches, voluntary payments,
+or contribution postings.

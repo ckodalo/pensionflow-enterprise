@@ -18,6 +18,7 @@ page 50103 "PFE Employer List"
                 field("Employer Code"; Rec."Employer Code")
                 {
                     ApplicationArea = All;
+                    ToolTip = 'Leave blank to assign the next employer number when the record is saved. Enter a code only if the number series permits manual numbers.';
                 }
 
                 field("Employer Name"; Rec."Employer Name")

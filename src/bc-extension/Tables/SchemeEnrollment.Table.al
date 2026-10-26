@@ -10,7 +10,7 @@ table 50104 "PFE Scheme Enrollment"
         field(1; "Enrollment No."; Code[20])
         {
             Caption = 'Enrollment No.';
-            NotBlank = true;
+            // Allow a blank key on new pages; OnInsert assigns the next number.
             trigger OnValidate()
             var
                 Setup: Record "PFE Setup";
@@ -52,11 +52,13 @@ table 50104 "PFE Scheme Enrollment"
                 Scheme.Get("Scheme Code");
                 Validate("Employee Rate", Scheme."Employee Rate");
                 Validate("Employer Rate", Scheme."Employer Rate");
+                if Scheme.Category = Scheme.Category::Individual then
+                    Validate("Employer Rate", 0);
             end;
         }
         field(5; "Employee Rate"; Decimal)
         {
-            Caption = 'Employee Contribution Rate (%)';
+            Caption = 'Member Contribution Rate (%)';
             MinValue = 0;
             MaxValue = 100;
             DecimalPlaces = 0 : 5;
@@ -142,26 +144,30 @@ table 50104 "PFE Scheme Enrollment"
         Employer: Record "PFE Employer";
         Scheme: Record "PFE Pension Scheme";
         OtherEnrollment: Record "PFE Scheme Enrollment";
+        EnrollmentManagement: Codeunit "PFE Enrollment Management";
     begin
         TestField("Member No.");
-        TestField("Employer Code");
         TestField("Scheme Code");
         TestField("Effective From");
         // Lock a stable parent row so simultaneous first enrollments for the
         // same member cannot both pass an empty overlap check.
         Member.LockTable();
         Member.Get("Member No.");
-        Employer.LockTable();
-        Employer.Get("Employer Code");
+        if "Employer Code" <> '' then begin
+            Employer.LockTable();
+            Employer.Get("Employer Code");
+        end;
         Scheme.LockTable();
         Scheme.Get("Scheme Code");
         CheckDates();
+        EnrollmentManagement.CheckEligibility("Scheme Code", "Employer Code", "Effective From", "Effective To", Status = Status::Active);
+        if Scheme.Category = Scheme.Category::Individual then
+            TestField("Employer Rate", 0);
         if ("Employee Rate" < 0) or ("Employee Rate" > 100) or
            ("Employer Rate" < 0) or ("Employer Rate" > 100) then
             Error(RateErr);
         if Status = Status::Active then begin
             Member.TestField(Status, Member.Status::Active);
-            Employer.TestField(Status, Employer.Status::Active);
             Scheme.TestField(Status, Scheme.Status::Active);
             if (Scheme."Effective Date" <> 0D) and ("Effective From" < Scheme."Effective Date") then
                 Error(SchemeDateErr);

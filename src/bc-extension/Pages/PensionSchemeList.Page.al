@@ -33,6 +33,11 @@ page 50100 "PFE Pension Scheme List"
                 {
                     ApplicationArea = All;
                 }
+                field(Category; Rec.Category)
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Specifies the scheme participation category.';
+                }
             }
         }
     }

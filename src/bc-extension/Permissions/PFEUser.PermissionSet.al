@@ -3,6 +3,11 @@ permissionset 50100 "PFE USER"
     Assignable = true;
     Caption = 'PensionFlow User';
     Permissions =
+        tabledata "PFE Scheme Employer" = RIMD,
+        table "PFE Scheme Employer" = X,
+        page "PFE Scheme Employers" = X,
+        page "PFE Import Enrollment Options" = X,
+        codeunit "PFE Enrollment Management" = X,
         table "PFE Activities Cue" = X,
         page "PFE Activities" = X,
         codeunit "PFE Member Import" = X,

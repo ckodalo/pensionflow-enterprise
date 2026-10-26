@@ -16,6 +16,7 @@ table 50105 "PFE Member Import Row"
         field(9; "City"; Text[50]) { Caption = 'City'; }
         field(10; "Date Registered"; Date) { Caption = 'Date Registered'; }
         field(11; "Status"; Enum "PFE Member Status") { Caption = 'Status'; }
+        field(12; "Existing Member No."; Code[20]) { Caption = 'Existing Member No.'; }
     }
     keys
     {

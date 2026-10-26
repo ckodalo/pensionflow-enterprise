@@ -10,7 +10,7 @@ table 50103 "PFE Pension Member"
         field(1; "Member No."; Code[20])
         {
             Caption = 'Member No.';
-            NotBlank = true;
+            // Allow a blank key on new pages; OnInsert assigns the next number.
             trigger OnValidate()
             var
                 Setup: Record "PFE Setup";
@@ -75,7 +75,6 @@ table 50103 "PFE Pension Member"
         field(11; "Import Reference"; Code[50])
         {
             Caption = 'Import Reference';
-            Editable = false;
         }
     }
     keys
@@ -108,8 +107,10 @@ table 50103 "PFE Pension Member"
 
     trigger OnModify()
     begin
-        if "Import Reference" <> xRec."Import Reference" then
+        if (xRec."Import Reference" <> '') and ("Import Reference" <> xRec."Import Reference") then
             Error('The import reference cannot be changed after the member is created.');
+        if "Import Reference" <> xRec."Import Reference" then
+            CheckImportReference();
         TestField("Member Name");
         CheckDates();
     end;
@@ -135,6 +136,7 @@ table 50103 "PFE Pension Member"
         Setup.LockTable();
         Setup.Get();
         Member.SetRange("Import Reference", "Import Reference");
+        Member.SetFilter("Member No.", '<>%1', "Member No.");
         if not Member.IsEmpty() then
             Error('A member already exists with import reference %1.', "Import Reference");
     end;
