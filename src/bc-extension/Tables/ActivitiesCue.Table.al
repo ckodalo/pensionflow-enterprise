@@ -48,6 +48,27 @@ table 50106 "PFE Activities Cue"
             CalcFormula = count("PFE Scheme Enrollment" where(Status = const(Draft)));
             Editable = false;
         }
+        field(8; "Contributions to Review"; Integer)
+        {
+            Caption = 'Contribution Batches to Review';
+            FieldClass = FlowField;
+            CalcFormula = count("PFE Contribution Batch" where(Status = filter(Open | Validated)));
+            Editable = false;
+        }
+        field(9; "Contributions to Post"; Integer)
+        {
+            Caption = 'Approved Batches to Post';
+            FieldClass = FlowField;
+            CalcFormula = count("PFE Contribution Batch" where(Status = const(Approved)));
+            Editable = false;
+        }
+        field(10; "Posted Contribution Batches"; Integer)
+        {
+            Caption = 'Posted Contribution Batches';
+            FieldClass = FlowField;
+            CalcFormula = count("PFE Contribution Batch" where(Status = const(Posted)));
+            Editable = false;
+        }
     }
     keys
     {

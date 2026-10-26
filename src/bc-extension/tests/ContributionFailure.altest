@@ -1,0 +1,10 @@
+codeunit 50205 "PFE Contribution Failure"
+{
+    EventSubscriberInstance = Manual;
+
+    [EventSubscriber(ObjectType::Table, Database::"PFE Contribution Entry", 'OnAfterInsertEvent', '', false, false)]
+    local procedure FailMemberInsert(var Rec: Record "PFE Contribution Entry"; RunTrigger: Boolean)
+    begin
+        Error('Test member posting failure');
+    end;
+}

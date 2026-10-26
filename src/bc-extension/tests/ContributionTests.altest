@@ -1,0 +1,749 @@
+codeunit 50204 "PFE Contribution Tests"
+{
+    Subtype = Test;
+    TestPermissions = Disabled;
+
+    [Test]
+    procedure SalaryOnlyCalculatesAndPosts()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Line: Record "PFE Contribution Line";
+        Entry: Record "PFE Contribution Entry";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 100);
+        AssertTrue(Management.ValidateBatch(Batch."No."), 'Expected valid salary-only batch.');
+        Line.Get(Batch."No.", 10000);
+        Line.TestField("Expected Employee", 500);
+        Line.TestField("Expected Employer", 1000);
+        Line.TestField("Total Due", 1600);
+        Management.Approve(Batch."No.");
+        Management.Post(Batch."No.");
+        Batch.Get(Batch."No.");
+        Batch.TestField(Status, Batch.Status::Posted);
+        Entry.Get(Batch."No.", 10000);
+        Entry.TestField("Total Due", 1600);
+        asserterror Management.Post(Batch."No.");
+        Entry.SetRange("Batch No.", Batch."No.");
+        AssertTrue(Entry.Count() = 1, 'Posting twice must not duplicate entries.');
+    end;
+
+    [Test]
+    procedure OffsettingPayrollVariancesRequireReason()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Line: Record "PFE Contribution Line";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, true, 400, 1100, 0);
+        AssertTrue(Management.ValidateBatch(Batch."No."), 'Payroll variance should be reviewable.');
+        Line.Get(Batch."No.", 10000);
+        Line.TestField(Variance, 0);
+        Line.TestField("Has Variance", true);
+        asserterror Management.Approve(Batch."No.");
+        AssertLastError('variance reason');
+        Management.Reopen(Batch."No.");
+        Line.Get(Batch."No.", 10000);
+        Line."Variance Reason" := 'Reviewed payroll adjustment';
+        Line.Modify(true);
+        AssertTrue(Management.ValidateBatch(Batch."No."), 'Expected corrected review.');
+        Management.Approve(Batch."No.");
+        Management.Post(Batch."No.");
+    end;
+
+    [Test]
+    procedure ChangedRateAfterApprovalBlocksPosting()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Enrollment: Record "PFE Scheme Enrollment";
+        Entry: Record "PFE Contribution Entry";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        AssertTrue(Management.ValidateBatch(Batch."No."), 'Expected valid batch.');
+        Management.Approve(Batch."No.");
+        Enrollment.Get('CE-1');
+        Enrollment.Validate("Employee Rate", 6);
+        Enrollment.Modify(true);
+        asserterror Management.Post(Batch."No.");
+        AssertLastError('changed since approval');
+        Entry.SetRange("Batch No.", Batch."No.");
+        AssertTrue(Entry.IsEmpty(), 'Stale approval must post nothing.');
+    end;
+
+    [Test]
+    procedure DuplicateMemberMonthIsRejectedAcrossBatches()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Another: Record "PFE Contribution Batch";
+        Line: Record "PFE Contribution Line";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        Management.ValidateBatch(Batch."No.");
+        Management.Approve(Batch."No.");
+        Management.Post(Batch."No.");
+        NewBatch(Another);
+        AddLine(Another, 'CM-1', 10000, false, 0, 0, 0);
+        AssertTrue(not Management.ValidateBatch(Another."No."), 'Duplicate scheme/member/month must fail.');
+        Line.Get(Another."No.", 10000);
+        AssertTrue(StrPos(Line."Validation Error", 'already has a posted') > 0, 'Expected duplicate error.');
+    end;
+
+    [Test]
+    procedure DuplicateMembersWithinBatchAreRejected()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Line: Record "PFE Contribution Line";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        AddLine(Batch, 'CM-1', 20000, false, 0, 0, 0);
+        AssertTrue(not Management.ValidateBatch(Batch."No."), 'Duplicate member rows must fail.');
+        Line.Get(Batch."No.", 20000);
+        AssertTrue(StrPos(Line."Validation Error", 'repeated') > 0, 'Expected repeated member error.');
+    end;
+
+    [Test]
+    procedure ExcelDistinguishesBlankAndZeroPayrollAmounts()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Excel: Record "Excel Buffer" temporary;
+        Line: Record "PFE Contribution Line";
+        Importer: Codeunit "PFE Contribution Import";
+    begin
+        Initialize(Batch);
+        AddHeaders(Excel);
+        AddExcelRow(Excel, 'CM-1', '', '10000', '0', '0', '25');
+        AssertTrue(Importer.ProcessWorksheet(Batch."No.", Excel), 'Explicit zero payroll should import.');
+        Line.Get(Batch."No.", 2);
+        Line.TestField("Payroll Amounts Supplied", true);
+        Line.TestField("Employee Contribution", 0);
+        Line.TestField("Employer Contribution", 0);
+        Line.TestField("Total Due", 25);
+        Line.TestField("Has Variance", true);
+    end;
+
+    [Test]
+    procedure ExcelReferenceResolvesAndCalculates()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Excel: Record "Excel Buffer" temporary;
+        Line: Record "PFE Contribution Line";
+        Importer: Codeunit "PFE Contribution Import";
+    begin
+        Initialize(Batch);
+        AddHeaders(Excel);
+        AddExcelRow(Excel, '', 'CONTRIB-REF-1', '10000', '', '', '');
+        AssertTrue(Importer.ProcessWorksheet(Batch."No.", Excel), 'Reference-only identity should resolve.');
+        Line.Get(Batch."No.", 2);
+        Line.TestField("Member No.", 'CM-1');
+        Line.TestField("Payroll Amounts Supplied", false);
+        Line.TestField("Total Due", 1500);
+    end;
+
+    [Test]
+    procedure MalformedUploadPreservesExistingDraft()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Excel: Record "Excel Buffer" temporary;
+        Line: Record "PFE Contribution Line";
+        Importer: Codeunit "PFE Contribution Import";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        AddHeaders(Excel);
+        AddExcelRow(Excel, 'CM-1', '', '10000', '500', '', '');
+        asserterror Importer.ProcessWorksheet(Batch."No.", Excel);
+        AssertLastError('fill both');
+        Line.Get(Batch."No.", 10000);
+        Line.TestField("Pensionable Salary", 10000);
+        Excel.Get(2, 5);
+        Excel."Cell Value as Text" := '1000';
+        Excel.Modify();
+        Excel.Get(2, 3);
+        Excel.Formula := '5000*2';
+        Excel.Modify();
+        asserterror Importer.ProcessWorksheet(Batch."No.", Excel);
+        AssertLastError('formulas');
+        Line.Get(Batch."No.", 10000);
+    end;
+
+    [Test]
+    procedure MonthEndEligibilityAndRoundingAreEnforced()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Enrollment: Record "PFE Scheme Enrollment";
+        Line: Record "PFE Contribution Line";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 123.45, false, 0, 0, 0);
+        AssertTrue(Management.ValidateBatch(Batch."No."), 'Expected rounded contributions.');
+        Line.Get(Batch."No.", 10000);
+        Line.TestField("Employee Contribution", 6.17);
+        Line.TestField("Employer Contribution", 12.35);
+        Management.Reopen(Batch."No.");
+        Enrollment.Get('CE-1');
+        Enrollment.Validate("Effective To", 20260115D);
+        Enrollment.Modify(true);
+        AssertTrue(not Management.ValidateBatch(Batch."No."), 'Enrollment ending mid-month needs explicit handling.');
+    end;
+
+    [Test]
+    procedure ApprovedAndPostedRecordsAreProtected()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Line: Record "PFE Contribution Line";
+        Entry: Record "PFE Contribution Entry";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        Management.ValidateBatch(Batch."No.");
+        Management.Approve(Batch."No.");
+        Line.Get(Batch."No.", 10000);
+        Line."Pensionable Salary" := 20000;
+        asserterror Line.Modify(true);
+        Management.Post(Batch."No.");
+        asserterror Management.Reopen(Batch."No.");
+        Batch.Get(Batch."No.");
+        asserterror Batch.Delete(true);
+        Entry.Get(Batch."No.", 10000);
+        asserterror Entry.Delete(true);
+    end;
+
+    [Test]
+    procedure PartialPaymentsCannotOverAllocate()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Payment1: Integer;
+        Payment2: Integer;
+    begin
+        Initialize(Batch);
+        PostStandardBatch(Batch);
+        Payment1 := AddPayment('CONTRIB-CUST', 1000);
+        Payment2 := AddPayment('CONTRIB-CUST', 1000);
+        Management.MatchPayment(Batch."No.", Payment1, 1000);
+        Batch.CalcFields("Matched Payments", "Total Due");
+        Batch.TestField("Matched Payments", 1000);
+        asserterror Management.MatchPayment(Batch."No.", Payment2, 600);
+        AssertLastError('outstanding');
+        Management.MatchPayment(Batch."No.", Payment2, 500);
+        Batch.CalcFields("Matched Payments");
+        Batch.TestField("Matched Payments", 1500);
+        Management.RemovePayment(Batch."No.", Payment1);
+        Batch.CalcFields("Matched Payments");
+        Batch.TestField("Matched Payments", 500);
+    end;
+
+    [Test]
+    procedure PaymentMustBelongToEmployerAndNotBeReversed()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Ledger: Record "Cust. Ledger Entry";
+        PaymentNo: Integer;
+    begin
+        Initialize(Batch);
+        PostStandardBatch(Batch);
+        PaymentNo := AddPayment('WRONG-CUSTOMER', 2000);
+        asserterror Management.MatchPayment(Batch."No.", PaymentNo, 500);
+        Ledger.Get(PaymentNo);
+        Ledger."Customer No." := 'CONTRIB-CUST';
+        Ledger.Reversed := true;
+        Ledger.Modify(false);
+        asserterror Management.MatchPayment(Batch."No.", PaymentNo, 500);
+        Ledger.Reversed := false;
+        Ledger."Currency Code" := 'USD';
+        Ledger.Modify(false);
+        asserterror Management.MatchPayment(Batch."No.", PaymentNo, 500);
+    end;
+
+    [Test]
+    procedure PaymentCannotBeReusedBeyondItsOriginalAmount()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Another: Record "PFE Contribution Batch";
+        PaymentNo: Integer;
+    begin
+        Initialize(Batch);
+        PostStandardBatch(Batch);
+        NewBatch(Another);
+        Another.Validate("Period Start", 20260201D);
+        Another.Modify(true);
+        PostStandardBatch(Another);
+        PaymentNo := AddPayment('CONTRIB-CUST', 1000);
+        Management.MatchPayment(Batch."No.", PaymentNo, 800);
+        asserterror Management.MatchPayment(Another."No.", PaymentNo, 300);
+        AssertLastError('unallocated');
+        Management.MatchPayment(Another."No.", PaymentNo, 200);
+    end;
+
+    [Test]
+    procedure ReversedMatchedPaymentRestoresOutstandingAmount()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Ledger: Record "Cust. Ledger Entry";
+        PaymentNo: Integer;
+    begin
+        Initialize(Batch);
+        PostStandardBatch(Batch);
+        PaymentNo := AddPayment('CONTRIB-CUST', 1500);
+        Management.MatchPayment(Batch."No.", PaymentNo, 1500);
+        AssertTrue(Management.ValidMatchedAmount(Batch."No.") = 1500, 'Expected full valid payment.');
+        Ledger.Get(PaymentNo);
+        Ledger.Reversed := true;
+        Ledger.Modify(false);
+        AssertTrue(Management.ValidMatchedAmount(Batch."No.") = 0, 'Reversed payments must no longer settle the batch.');
+    end;
+
+    [Test]
+    procedure BatchCardSavesWithoutManualNumber()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Created: Record "PFE Contribution Batch";
+        Card: TestPage "PFE Contribution Batch";
+    begin
+        Initialize(Batch);
+        Card.OpenNew();
+        Card."Employer Code".SetValue('CONTRIB-EMP');
+        Card."Scheme Code".SetValue('CONTRIB-SCHEME');
+        Card."Period Start".SetValue(20260115D);
+        Card.Description.SetValue('Automatic contribution card test');
+        Card.Close();
+        Created.Get('CT000002');
+        Created.TestField("Period Start", 20260101D);
+        Created.TestField(Description, 'Automatic contribution card test');
+    end;
+
+    [Test]
+    procedure InvalidMemberBlocksApprovalAndPosting()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Line: Record "PFE Contribution Line";
+        Entry: Record "PFE Contribution Entry";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        AddLine(Batch, 'MISSING-MEMBER', 10000, false, 0, 0, 0);
+        AssertTrue(not Management.ValidateBatch(Batch."No."), 'An invalid member must block the batch.');
+        Line.Get(Batch."No.", 20000);
+        AssertTrue(Line."Validation Error" <> '', 'Invalid member must have a visible line error.');
+        asserterror Management.Approve(Batch."No.");
+        asserterror Management.Post(Batch."No.");
+        Entry.SetRange("Batch No.", Batch."No.");
+        AssertTrue(Entry.IsEmpty(), 'No partial entries may be posted.');
+    end;
+
+    [Test]
+    procedure KESBatchUsesCurrencyRoundingAndPostsCurrency()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Currency: Record Currency;
+        Entry: Record "PFE Contribution Entry";
+        CurrencyManagement: Codeunit "PFE Contribution Currency";
+    begin
+        Initialize(Batch);
+        CurrencyManagement.EnsureKES();
+        Currency.Get('KES');
+        Currency."Amount Rounding Precision" := 0.05;
+        Currency.Modify(false);
+        Batch.Validate("Currency Code", 'KES');
+        Batch.Modify(true);
+        AddLine(Batch, 'CM-1', 123.45, false, 0, 0, 0);
+        AssertTrue(Management.ValidateBatch(Batch."No."), 'Expected KES validation.');
+        Management.Approve(Batch."No.");
+        Management.Post(Batch."No.");
+        Entry.Get(Batch."No.", 10000);
+        Entry.TestField("Currency Code", 'KES');
+        Entry.TestField("Employee Contribution", 6.15);
+        Entry.TestField("Employer Contribution", 12.35);
+    end;
+
+    [Test]
+    procedure ForeignPaymentUsesOriginalCurrencyAmount()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Ledger: Record "Cust. Ledger Entry";
+        Detailed: Record "Detailed Cust. Ledg. Entry";
+        Match: Record "PFE Contribution Payment";
+        CurrencyManagement: Codeunit "PFE Contribution Currency";
+        PaymentNo: Integer;
+    begin
+        Initialize(Batch);
+        CurrencyManagement.EnsureKES();
+        Batch.Validate("Currency Code", 'KES');
+        Batch.Modify(true);
+        PostStandardBatch(Batch);
+        PaymentNo := AddPayment('CONTRIB-CUST', 1000);
+        asserterror Management.MatchPayment(Batch."No.", PaymentNo, 500);
+        Ledger.Get(PaymentNo);
+        Ledger."Currency Code" := 'KES';
+        Ledger.Modify(false);
+        Detailed.SetRange("Cust. Ledger Entry No.", PaymentNo);
+        Detailed.FindFirst();
+        Detailed."Amount (LCY)" := -10;
+        Detailed.Modify(false);
+        Management.MatchPayment(Batch."No.", PaymentNo, 1000);
+        Match.Get(Batch."No.", PaymentNo);
+        Match.TestField("Currency Code", 'KES');
+        Match.TestField(Amount, 1000);
+    end;
+
+    [Test]
+    procedure CurrencyChangeRequiresReopening()
+    var
+        Batch: Record "PFE Contribution Batch";
+        CurrencyManagement: Codeunit "PFE Contribution Currency";
+    begin
+        Initialize(Batch);
+        CurrencyManagement.EnsureKES();
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        Management.ValidateBatch(Batch."No.");
+        Batch.Get(Batch."No.");
+        Batch.Validate("Currency Code", 'KES');
+        asserterror Batch.Modify(true);
+        Management.Reopen(Batch."No.");
+        Batch.Get(Batch."No.");
+        Batch.Validate("Currency Code", 'KES');
+        Batch.Modify(true);
+        AssertTrue(Management.ValidateBatch(Batch."No."), 'Currency may be changed on a reopened batch.');
+    end;
+
+    [Test]
+    procedure PayrollPostsBalancedGLAndMemberHistory()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Entry: Record "PFE Contribution Entry";
+        GL: Record "G/L Entry";
+        CustomerEntry: Record "Cust. Ledger Entry";
+        Member: Record "PFE Pension Member";
+    begin
+        Initialize(Batch);
+        PostStandardBatch(Batch);
+        Batch.Get(Batch."No.");
+        Batch.TestField("G/L Register No.");
+        Batch.TestField("G/L Transaction No.");
+        GL.SetRange("Transaction No.", Batch."G/L Transaction No.");
+        GL.CalcSums(Amount);
+        GL.TestField(Amount, 0);
+        GL.SetRange("G/L Account No.", Batch."Asset Account");
+        GL.CalcSums(Amount);
+        GL.TestField(Amount, 1500);
+        GL.SetRange("G/L Account No.", Batch."Member Balance Account");
+        GL.CalcSums(Amount);
+        GL.TestField(Amount, -1500);
+        CustomerEntry.Get(Batch."Receivable Entry No.");
+        CustomerEntry.CalcFields("Original Amount");
+        CustomerEntry.TestField("Original Amount", 1500);
+        Entry.Get(Batch."No.", 10000);
+        Entry.TestField("G/L Transaction No.", Batch."G/L Transaction No.");
+        Entry.TestField("Total Due (LCY)", 1500);
+        Member.Get('CM-1');
+        Member.SetRange("Contribution Currency Filter", '');
+        Member.CalcFields("Contribution Balance");
+        Member.TestField("Contribution Balance", 1500);
+    end;
+
+    [Test]
+    procedure AccountingChangesAfterApprovalBlockPosting()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Employer: Record "PFE Employer";
+        Customer: Record Customer;
+        GL: Record "G/L Entry";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        Management.ValidateBatch(Batch."No.");
+        Management.Approve(Batch."No.");
+        Customer.Init();
+        Customer."No." := 'CONTRIB-OTHER';
+        Customer.Name := 'Other pension customer';
+        Customer."Customer Posting Group" := 'CONTRIB-TEST';
+        Customer.Insert(false);
+        Employer.Get('CONTRIB-EMP');
+        Employer."BC Customer No." := Customer."No.";
+        Employer.Modify(true);
+        asserterror Management.Post(Batch."No.");
+        AssertLastError('Accounting setup changed');
+        GL.SetRange("Document No.", Batch."No.");
+        AssertTrue(GL.IsEmpty(), 'No G/L entries should be created for a stale approved account mapping.');
+    end;
+
+    [Test]
+    procedure MemberFailureRollsBackStandardGLPosting()
+    var
+        Batch: Record "PFE Contribution Batch";
+        GL: Record "G/L Entry";
+        Receivable: Record "Cust. Ledger Entry";
+        Failure: Codeunit "PFE Contribution Failure";
+    begin
+        Initialize(Batch);
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        Management.ValidateBatch(Batch."No.");
+        Management.Approve(Batch."No.");
+        BindSubscription(Failure);
+        asserterror Management.Post(Batch."No.");
+        UnbindSubscription(Failure);
+        AssertLastError('Test member posting failure');
+        GL.SetRange("Document No.", Batch."No.");
+        AssertTrue(GL.IsEmpty(), 'G/L postings must roll back when the member subledger fails.');
+        Receivable.SetRange("Document No.", Batch."No.");
+        AssertTrue(Receivable.IsEmpty(), 'Employer receivable must roll back with member entries.');
+        Batch.Get(Batch."No.");
+        Batch.TestField(Status, Batch.Status::Approved);
+        Batch.TestField("G/L Register No.", 0);
+    end;
+
+    [Test]
+    procedure DefaultAccountCreationIsRepeatable()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Setup: Record "PFE Setup";
+        Accounting: Codeunit "PFE Contribution Accounting";
+    begin
+        Initialize(Batch);
+        Accounting.CreateDefaultAccounts();
+        Accounting.CreateDefaultAccounts();
+        Setup.Get();
+        Setup.TestField("Contribution Asset Account", 'PFE-1300');
+        Setup.TestField("Member Balance Account", 'PFE-2300');
+        Accounting.SetUpEmployer('CONTRIB-EMP');
+    end;
+
+    [Test]
+    procedure ForeignMemberLCYAllocationsReconcileToGL()
+    var
+        Batch: Record "PFE Contribution Batch";
+        Member: Record "PFE Pension Member";
+        Enrollment: Record "PFE Scheme Enrollment";
+        Entries: Record "PFE Contribution Entry";
+        GL: Record "G/L Entry";
+    begin
+        Initialize(Batch);
+        Member.Init();
+        Member."Member No." := 'CM-2';
+        Member."Member Name" := 'Second Contribution Member';
+        Member.Insert(true);
+        Enrollment.Get('CE-1');
+        Enrollment."Enrollment No." := 'CE-2';
+        Enrollment."Member No." := 'CM-2';
+        Enrollment.Insert(true);
+        Batch.Validate("Currency Code", 'KES');
+        Batch.Modify(true);
+        AddLine(Batch, 'CM-1', 123.45, false, 0, 0, 0);
+        AddLine(Batch, 'CM-2', 123.45, false, 0, 0, 0);
+        Management.ValidateBatch(Batch."No.");
+        Management.Approve(Batch."No.");
+        Management.Post(Batch."No.");
+        Batch.Get(Batch."No.");
+        Entries.SetRange("Batch No.", Batch."No.");
+        Entries.CalcSums("Total Due (LCY)");
+        Entries.TestField("Total Due (LCY)", Batch."Total Due (LCY)");
+        GL.SetRange("Transaction No.", Batch."G/L Transaction No.");
+        GL.SetRange("G/L Account No.", Batch."Member Balance Account");
+        GL.CalcSums(Amount);
+        AssertTrue(GL.Amount = -Entries."Total Due (LCY)", 'Member LCY balances must reconcile exactly to their G/L control credit.');
+    end;
+
+    local procedure Initialize(var Batch: Record "PFE Contribution Batch")
+    var
+        Setup: Record "PFE Setup";
+        GLSetup: Record "General Ledger Setup";
+        Series: Record "No. Series";
+        SeriesLine: Record "No. Series Line";
+        Employer: Record "PFE Employer";
+        Scheme: Record "PFE Pension Scheme";
+        Member: Record "PFE Pension Member";
+        Enrollment: Record "PFE Scheme Enrollment";
+        Participation: Record "PFE Scheme Employer";
+        Customer: Record Customer;
+        PostingGroup: Record "Customer Posting Group";
+        ExchangeRate: Record "Currency Exchange Rate";
+        Accounting: Codeunit "PFE Contribution Accounting";
+        CurrencyManagement: Codeunit "PFE Contribution Currency";
+    begin
+        if not GLSetup.Get() then begin
+            GLSetup.Init();
+            GLSetup.Insert(false);
+        end;
+        GLSetup."Amount Rounding Precision" := 0.01;
+        GLSetup."LCY Code" := 'GBP';
+        GLSetup."Additional Reporting Currency" := '';
+        GLSetup."Allow Posting From" := 0D;
+        GLSetup."Allow Posting To" := 0D;
+        GLSetup.Modify(false);
+        if not Setup.Get() then begin
+            Setup.Init();
+            Setup.Insert(true);
+        end;
+        Series.Code := CopyStr(DelChr(Format(CreateGuid()), '=', '{}-'), 1, 20);
+        Series."Default Nos." := true;
+        Series."Manual Nos." := true;
+        Series.Insert(true);
+        SeriesLine."Series Code" := Series.Code;
+        SeriesLine."Line No." := 10000;
+        SeriesLine.Validate("Starting No.", 'CT000001');
+        SeriesLine.Validate("Ending No.", 'CT999999');
+        SeriesLine.Validate("Increment-by No.", 1);
+        SeriesLine.Insert(true);
+        Setup."Employer Nos." := Series.Code;
+        Setup."Member Nos." := Series.Code;
+        Setup."Enrollment Nos." := Series.Code;
+        Setup."Contribution Batch Nos." := Series.Code;
+        Setup."Contribution Asset Account" := '';
+        Setup."Member Balance Account" := '';
+        Setup."Contribution Jnl. Template" := '';
+        Setup."Contribution Jnl. Batch" := '';
+        Setup.Modify(true);
+        Accounting.CreateDefaultAccounts();
+        Setup.Get();
+        PostingGroup.Init();
+        PostingGroup.Code := 'CONTRIB-TEST';
+        PostingGroup."Receivables Account" := Setup."Contribution Asset Account";
+        PostingGroup.Insert(true);
+        Customer.Init();
+        Customer."No." := 'CONTRIB-CUST';
+        Customer.Name := 'Pension contribution test';
+        Customer."Customer Posting Group" := PostingGroup.Code;
+        Customer.Insert(false);
+        CurrencyManagement.EnsureKES();
+        ExchangeRate.Init();
+        ExchangeRate."Currency Code" := 'KES';
+        ExchangeRate."Starting Date" := 20260101D;
+        ExchangeRate."Exchange Rate Amount" := 100;
+        ExchangeRate."Relational Exch. Rate Amount" := 1;
+        ExchangeRate."Adjustment Exch. Rate Amount" := 100;
+        ExchangeRate."Relational Adjmt Exch Rate Amt" := 1;
+        if not ExchangeRate.Insert(false) then
+            ExchangeRate.Modify(false);
+        Employer."Employer Code" := 'CONTRIB-EMP';
+        Employer."Employer Name" := 'Contribution Test Employer';
+        Employer."BC Customer No." := 'CONTRIB-CUST';
+        Employer.Status := Employer.Status::Active;
+        Employer.Insert(true);
+        Scheme."Scheme Code" := 'CONTRIB-SCHEME';
+        Scheme.Category := Scheme.Category::Occupational;
+        Scheme.Status := Scheme.Status::Active;
+        Scheme."Employee Rate" := 5;
+        Scheme."Employer Rate" := 10;
+        Scheme.Insert(true);
+        Participation."Scheme Code" := Scheme."Scheme Code";
+        Participation."Employer Code" := Employer."Employer Code";
+        Participation.Active := true;
+        Participation.Insert(true);
+        Member."Member No." := 'CM-1';
+        Member."Member Name" := 'Contribution Test Member';
+        Member."Import Reference" := 'CONTRIB-REF-1';
+        Member.Insert(true);
+        Enrollment."Enrollment No." := 'CE-1';
+        Enrollment.Validate("Member No.", Member."Member No.");
+        Enrollment.Validate("Employer Code", Employer."Employer Code");
+        Enrollment.Validate("Scheme Code", Scheme."Scheme Code");
+        Enrollment.Validate("Effective From", 20260101D);
+        Enrollment.Validate(Status, Enrollment.Status::Active);
+        Enrollment.Insert(true);
+        NewBatch(Batch);
+    end;
+
+    local procedure NewBatch(var Batch: Record "PFE Contribution Batch")
+    begin
+        Clear(Batch);
+        Batch.Init();
+        Batch.Validate("Employer Code", 'CONTRIB-EMP');
+        Batch.Validate("Scheme Code", 'CONTRIB-SCHEME');
+        Batch.Validate("Period Start", 20260115D);
+        Batch.Validate("Posting Date", 20260131D);
+        Batch.Insert(true);
+    end;
+
+    local procedure AddLine(Batch: Record "PFE Contribution Batch"; MemberNo: Code[20]; Salary: Decimal; Payroll: Boolean; EmployeeAmount: Decimal; EmployerAmount: Decimal; Voluntary: Decimal)
+    var
+        Line: Record "PFE Contribution Line";
+        LastLine: Record "PFE Contribution Line";
+    begin
+        Line."Batch No." := Batch."No.";
+        LastLine.SetRange("Batch No.", Batch."No.");
+        if LastLine.FindLast() then
+            Line."Line No." := LastLine."Line No.";
+        Line."Line No." += 10000;
+        Line."Member No." := MemberNo;
+        Line."Pensionable Salary" := Salary;
+        Line."Payroll Amounts Supplied" := Payroll;
+        Line."Employee Contribution" := EmployeeAmount;
+        Line."Employer Contribution" := EmployerAmount;
+        Line."Voluntary Contribution" := Voluntary;
+        Line.Insert(true);
+    end;
+
+    local procedure PostStandardBatch(Batch: Record "PFE Contribution Batch")
+    begin
+        AddLine(Batch, 'CM-1', 10000, false, 0, 0, 0);
+        AssertTrue(Management.ValidateBatch(Batch."No."), 'Expected valid batch.');
+        Management.Approve(Batch."No.");
+        Management.Post(Batch."No.");
+    end;
+
+    local procedure AddPayment(CustomerNo: Code[20]; Amount: Decimal): Integer
+    var
+        Ledger: Record "Cust. Ledger Entry";
+        Detailed: Record "Detailed Cust. Ledg. Entry";
+        NextNo: Integer;
+    begin
+        if Ledger.FindLast() then
+            NextNo := Ledger."Entry No.";
+        Ledger.Init();
+        Ledger."Entry No." := NextNo + 1;
+        Ledger."Customer No." := CustomerNo;
+        Ledger."Document Type" := Ledger."Document Type"::Payment;
+        Ledger."Document No." := 'CONTRIB-PAYMENT';
+        Ledger."Posting Date" := 20260131D;
+        Ledger.Insert(false);
+        NextNo := 0;
+        if Detailed.FindLast() then
+            NextNo := Detailed."Entry No.";
+        Detailed.Init();
+        Detailed."Entry No." := NextNo + 1;
+        Detailed."Cust. Ledger Entry No." := Ledger."Entry No.";
+        Detailed."Entry Type" := Detailed."Entry Type"::"Initial Entry";
+        Detailed."Posting Date" := Ledger."Posting Date";
+        Detailed.Amount := -Amount;
+        Detailed."Amount (LCY)" := -Amount;
+        Detailed.Insert(false);
+        exit(Ledger."Entry No.");
+    end;
+
+    local procedure AddHeaders(var Excel: Record "Excel Buffer" temporary)
+    var
+        Importer: Codeunit "PFE Contribution Import";
+        ColumnNo: Integer;
+    begin
+        Excel.NewRow();
+        for ColumnNo := 1 to 6 do
+            Excel.AddColumn(Importer.GetHeader(ColumnNo), false, '', true, false, false, '@', Excel."Cell Type"::Text);
+    end;
+
+    local procedure AddExcelRow(var Excel: Record "Excel Buffer" temporary; MemberNo: Text; Reference: Text; Salary: Text; EmployeeAmount: Text; EmployerAmount: Text; Voluntary: Text)
+    begin
+        Excel.NewRow();
+        Excel.AddColumn(MemberNo, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(Reference, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(Salary, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(EmployeeAmount, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(EmployerAmount, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+        Excel.AddColumn(Voluntary, false, '', false, false, false, '@', Excel."Cell Type"::Text);
+    end;
+
+    local procedure AssertTrue(Condition: Boolean; MessageText: Text)
+    begin
+        if not Condition then
+            Error(MessageText);
+    end;
+
+    local procedure AssertLastError(Expected: Text)
+    begin
+        AssertTrue(StrPos(LowerCase(GetLastErrorText()), LowerCase(Expected)) > 0, GetLastErrorText());
+    end;
+
+    var
+        Management: Codeunit "PFE Contribution Management";
+}

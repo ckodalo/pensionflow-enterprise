@@ -57,6 +57,13 @@ page 50110 "PFE Activities"
                     DrillDownPageId = "PFE Enrollment List";
                 }
             }
+            cuegroup(FinanceActivity)
+            {
+                Caption = 'Finance';
+                field("Contributions to Review"; Rec."Contributions to Review") { ApplicationArea = All; DrillDownPageId = "PFE Contribution Batches"; ToolTip = 'Open contribution batches that are Open or Validated and awaiting review or approval.'; }
+                field("Contributions to Post"; Rec."Contributions to Post") { ApplicationArea = All; DrillDownPageId = "PFE Contribution Batches"; ToolTip = 'Open approved payroll batches ready for general ledger and member contribution posting.'; }
+                field("Posted Contribution Batches"; Rec."Posted Contribution Batches") { ApplicationArea = All; DrillDownPageId = "PFE Contribution Batches"; ToolTip = 'Open posted contribution batches and their linked member history, general ledger entries and payment matches.'; }
+            }
         }
     }
 
@@ -68,6 +75,7 @@ page 50110 "PFE Activities"
 
     trigger OnAfterGetCurrRecord()
     begin
-        Rec.CalcFields(Members, Employers, Schemes, Enrollments, "Active Enrollments", "Draft Enrollments");
+        Rec.CalcFields(Members, Employers, Schemes, Enrollments, "Active Enrollments", "Draft Enrollments",
+            "Contributions to Review", "Contributions to Post", "Posted Contribution Batches");
     end;
 }

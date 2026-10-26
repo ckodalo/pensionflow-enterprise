@@ -76,6 +76,33 @@ table 50103 "PFE Pension Member"
         {
             Caption = 'Import Reference';
         }
+        field(20; "Contribution Currency Filter"; Code[10]) { FieldClass = FlowFilter; TableRelation = Currency; }
+        field(21; "Contribution Scheme Filter"; Code[20]) { FieldClass = FlowFilter; TableRelation = "PFE Pension Scheme"; }
+        field(22; "Employee Contributions"; Decimal)
+        {
+            FieldClass = FlowField;
+            CalcFormula = sum("PFE Contribution Entry"."Employee Contribution" where("Member No." = field("Member No."), "Currency Code" = field("Contribution Currency Filter"), "Scheme Code" = field("Contribution Scheme Filter"), "G/L Transaction No." = filter(> 0)));
+            Editable = false;
+        }
+        field(23; "Employer Contributions"; Decimal)
+        {
+            FieldClass = FlowField;
+            CalcFormula = sum("PFE Contribution Entry"."Employer Contribution" where("Member No." = field("Member No."), "Currency Code" = field("Contribution Currency Filter"), "Scheme Code" = field("Contribution Scheme Filter"), "G/L Transaction No." = filter(> 0)));
+            Editable = false;
+        }
+        field(24; "Voluntary Contributions"; Decimal)
+        {
+            FieldClass = FlowField;
+            CalcFormula = sum("PFE Contribution Entry"."Voluntary Contribution" where("Member No." = field("Member No."), "Currency Code" = field("Contribution Currency Filter"), "Scheme Code" = field("Contribution Scheme Filter"), "G/L Transaction No." = filter(> 0)));
+            Editable = false;
+        }
+        field(25; "Contribution Balance"; Decimal)
+        {
+            Caption = 'Posted Contribution Balance';
+            FieldClass = FlowField;
+            CalcFormula = sum("PFE Contribution Entry"."Total Due" where("Member No." = field("Member No."), "Currency Code" = field("Contribution Currency Filter"), "Scheme Code" = field("Contribution Scheme Filter"), "G/L Transaction No." = filter(> 0)));
+            Editable = false;
+        }
     }
     keys
     {
@@ -152,7 +179,11 @@ table 50103 "PFE Pension Member"
     local procedure CheckNoEnrollments()
     var
         Enrollment: Record "PFE Scheme Enrollment";
+        Contribution: Record "PFE Contribution Line";
     begin
+        Contribution.SetRange("Member No.", "Member No.");
+        if not Contribution.IsEmpty() then
+            Error('A member with contribution lines cannot be deleted.');
         Enrollment.SetRange("Member No.", "Member No.");
         if not Enrollment.IsEmpty() then
             Error(EnrollmentExistsErr);

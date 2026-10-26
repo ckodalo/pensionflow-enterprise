@@ -40,6 +40,7 @@ page 50101 "PFE Pension Scheme Card"
 
             group(Contributions)
             {
+                field("Member Balance Account"; Rec."Member Balance Account") { ApplicationArea = All; ToolTip = 'Member balance liability control account for this scheme. Blank uses PensionFlow Setup. Individual member credits are tracked in the member contribution history.'; }
                 field("Employee Rate"; Rec."Employee Rate")
                 {
                     ApplicationArea = All;
@@ -61,6 +62,13 @@ page 50101 "PFE Pension Scheme Card"
     {
         area(Navigation)
         {
+            action(ContributionBatches)
+            {
+                ApplicationArea = All;
+                Caption = 'Contribution Batches';
+                RunObject = page "PFE Contribution Batches";
+                RunPageLink = "Scheme Code" = field("Scheme Code");
+            }
             action(ParticipatingEmployers)
             {
                 ApplicationArea = All;

@@ -132,6 +132,15 @@ table 50104 "PFE Scheme Enrollment"
         Error(RenameErr);
     end;
 
+    trigger OnDelete()
+    var
+        Contribution: Record "PFE Contribution Entry";
+    begin
+        Contribution.SetRange("Enrollment No.", "Enrollment No.");
+        if not Contribution.IsEmpty() then
+            Error('An enrollment with posted contributions cannot be deleted.');
+    end;
+
     local procedure CheckDates()
     begin
         if ("Effective From" <> 0D) and ("Effective To" <> 0D) and ("Effective To" < "Effective From") then

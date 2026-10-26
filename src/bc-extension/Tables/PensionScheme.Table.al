@@ -51,6 +51,7 @@ table 50100 "PFE Pension Scheme"
         {
             Caption = 'Scheme Category';
         }
+        field(9; "Member Balance Account"; Code[20]) { TableRelation = "G/L Account" where("Account Type" = const(Posting), "Income/Balance" = const("Balance Sheet")); }
     }
 
     keys
@@ -97,7 +98,11 @@ table 50100 "PFE Pension Scheme"
     var
         Enrollment: Record "PFE Scheme Enrollment";
         Participation: Record "PFE Scheme Employer";
+        Contribution: Record "PFE Contribution Batch";
     begin
+        Contribution.SetRange("Scheme Code", "Scheme Code");
+        if not Contribution.IsEmpty() then
+            Error('A scheme with contribution batches cannot be deleted.');
         Enrollment.SetRange("Scheme Code", "Scheme Code");
         if not Enrollment.IsEmpty() then
             Error('A scheme with enrollments cannot be deleted.');

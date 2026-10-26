@@ -75,6 +75,11 @@ page 50104 "PFE Employer Card"
 
             group(Integration)
             {
+                field("Contribution Asset Account"; Rec."Contribution Asset Account")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Balance-sheet asset account for this employer contributions receivable. Blank uses PensionFlow Setup. The linked customer posting group must point to the same account.';
+                }
                 field("BC Customer No."; Rec."BC Customer No.")
                 {
                     ApplicationArea = All;
@@ -84,8 +89,34 @@ page 50104 "PFE Employer Card"
     }
     actions
     {
+        area(Processing)
+        {
+            action(SetUpContributionAccounting)
+            {
+                ApplicationArea = All;
+                Caption = 'Set Up Contribution Accounting';
+                Image = Setup;
+                AccessByPermission = tabledata "PFE Setup" = M;
+                trigger OnAction()
+                var
+                    Accounting: Codeunit "PFE Contribution Accounting";
+                begin
+                    CurrPage.SaveRecord();
+                    Accounting.SetUpEmployer(Rec."Employer Code");
+                    CurrPage.Update(false);
+                    Message('The employer receivable account and customer link are ready. Existing linked customers must use the selected receivable account.');
+                end;
+            }
+        }
         area(Navigation)
         {
+            action(ContributionBatches)
+            {
+                ApplicationArea = All;
+                Caption = 'Contribution Batches';
+                RunObject = page "PFE Contribution Batches";
+                RunPageLink = "Employer Code" = field("Employer Code");
+            }
             action(ParticipatingSchemes)
             {
                 ApplicationArea = All;

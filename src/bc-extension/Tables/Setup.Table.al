@@ -31,6 +31,10 @@ table 50102 "PFE Setup"
             Caption = 'Contribution Batch Nos.';
             TableRelation = "No. Series";
         }
+        field(6; "Contribution Asset Account"; Code[20]) { Caption = 'Contributions Receivable Account'; TableRelation = "G/L Account" where("Account Type" = const(Posting), "Income/Balance" = const("Balance Sheet")); }
+        field(7; "Member Balance Account"; Code[20]) { TableRelation = "G/L Account" where("Account Type" = const(Posting), "Income/Balance" = const("Balance Sheet")); }
+        field(8; "Contribution Jnl. Template"; Code[10]) { TableRelation = "Gen. Journal Template" where(Type = const(General)); }
+        field(9; "Contribution Jnl. Batch"; Code[10]) { TableRelation = "Gen. Journal Batch".Name where("Journal Template Name" = field("Contribution Jnl. Template")); }
     }
 
     keys

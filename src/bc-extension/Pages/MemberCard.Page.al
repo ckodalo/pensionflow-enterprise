@@ -63,12 +63,51 @@ page 50107 "PFE Member Card"
                     ToolTip = 'Specifies the member city.';
                 }
             }
+            group(ContributionBalances)
+            {
+                Caption = 'Contribution Balances';
+                field(BalanceCurrency; BalanceCurrency)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Balance Currency Code';
+                    TableRelation = Currency;
+                    ToolTip = 'Select one currency for the contribution totals. Blank means company local currency. Different currencies are never added together.';
+                    trigger OnValidate()
+                    begin
+                        SetContributionFilters();
+                        CurrPage.Update(false);
+                    end;
+                }
+                field(BalanceScheme; BalanceScheme)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Balance Scheme';
+                    TableRelation = "PFE Pension Scheme";
+                    ToolTip = 'Select a scheme, or leave blank for all schemes in the selected currency.';
+                    trigger OnValidate()
+                    begin
+                        SetContributionFilters();
+                        CurrPage.Update(false);
+                    end;
+                }
+                field("Employee Contributions"; Rec."Employee Contributions") { ApplicationArea = All; }
+                field("Employer Contributions"; Rec."Employer Contributions") { ApplicationArea = All; }
+                field("Voluntary Contributions"; Rec."Voluntary Contributions") { ApplicationArea = All; }
+                field("Contribution Balance"; Rec."Contribution Balance") { ApplicationArea = All; ToolTip = 'Shows contributions credited to this member and posted to the general ledger, including amounts still receivable. This is not a cash-received or investment account balance.'; }
+            }
         }
     }
     actions
     {
         area(Navigation)
         {
+            action(PostedContributions)
+            {
+                ApplicationArea = All;
+                Caption = 'Contribution History';
+                RunObject = page "PFE Contribution Entries";
+                RunPageLink = "Member No." = field("Member No.");
+            }
             action(Enrollments)
             {
                 ApplicationArea = All;
@@ -80,4 +119,20 @@ page 50107 "PFE Member Card"
             }
         }
     }
+    trigger OnAfterGetCurrRecord()
+    begin
+        SetContributionFilters();
+    end;
+    local procedure SetContributionFilters()
+    begin
+        Rec.SetRange("Contribution Currency Filter", BalanceCurrency);
+        if BalanceScheme = '' then
+            Rec.SetRange("Contribution Scheme Filter")
+        else
+            Rec.SetRange("Contribution Scheme Filter", BalanceScheme);
+        Rec.CalcFields("Employee Contributions", "Employer Contributions", "Voluntary Contributions", "Contribution Balance");
+    end;
+    var
+        BalanceCurrency: Code[10];
+        BalanceScheme: Code[20];
 }

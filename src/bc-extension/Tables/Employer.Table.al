@@ -91,6 +91,11 @@ table 50101 "PFE Employer"
             TableRelation = "No. Series";
             Editable = false;
         }
+        field(14; "Contribution Asset Account"; Code[20])
+        {
+            Caption = 'Contributions Receivable Account';
+            TableRelation = "G/L Account" where("Account Type" = const(Posting), "Income/Balance" = const("Balance Sheet"));
+        }
     }
 
     keys
@@ -124,7 +129,11 @@ table 50101 "PFE Employer"
     var
         Enrollment: Record "PFE Scheme Enrollment";
         Participation: Record "PFE Scheme Employer";
+        Contribution: Record "PFE Contribution Batch";
     begin
+        Contribution.SetRange("Employer Code", "Employer Code");
+        if not Contribution.IsEmpty() then
+            Error('An employer with contribution batches cannot be deleted.');
         Enrollment.SetRange("Employer Code", "Employer Code");
         if not Enrollment.IsEmpty() then
             Error('An employer with enrollments cannot be deleted.');
